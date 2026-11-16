@@ -1,0 +1,12 @@
+:root {
+  --night: #05050c;
+  --cyan: #2cf6ff;
+  --magenta: #ff3df2;
+  --ink: #e8f6ff;
+  --font: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night); color: var(--ink); font: 600 16px/1.3 var(--font); -webkit-font-smoothing: antialiased; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
