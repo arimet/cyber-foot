@@ -26,3 +26,8 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .end p { margin: 0; font-size: 44px; text-transform: uppercase; }
 .end.cyan p { color: var(--cyan); text-shadow: 0 0 18px var(--cyan); }
 .end.magenta p { color: var(--magenta); text-shadow: 0 0 18px var(--magenta); }
+.row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.menu { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #05050cd8; pointer-events: auto; padding: 16px; }
+.menu h1 { margin: 0 0 12px; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); text-shadow: 0 0 18px var(--cyan), 3px 0 0 var(--magenta); }
+.menu p { margin: 10px 0 0; text-transform: uppercase; letter-spacing: 0.1em; color: var(--magenta); text-shadow: 0 0 10px var(--magenta); }
+.menu [data-vs]:not([data-vs="human"]) { border-color: var(--magenta); box-shadow: 0 0 12px #ff3df255; }
