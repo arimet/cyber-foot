@@ -7,6 +7,7 @@ import {
 import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
 import { type Animal, createAnimal } from './animals'
+import { framedFocus } from './framing'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -17,6 +18,8 @@ const LINE = 0x2cf6ff
 const BASE_H = 0.4
 const ANIMAL: Record<string, Animal> = { keeper: 'gorilla', heavy1: 'rhino', heavy2: 'bear', light1: 'fox', light2: 'cat' }
 const FIGURE_OVERHANG = 0.25 // the figure may stand a little taller than its physics body
+const CLOSE_ZOOM = 1.7
+const CAMERA_EASE = 0.06 // share of the remaining way covered each frame
 
 const neon = (color: number, intensity = 1.6) =>
   new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity })
@@ -37,6 +40,10 @@ export class GameScene {
   private readonly ray = new THREE.Raycaster()
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private selected: string | null = null
+  private fitDist = 30 // camera distance that frames the whole table
+  private zoomTarget = CLOSE_ZOOM
+  private zoom = CLOSE_ZOOM
+  private focus = { x: 0, z: 0 }
 
   constructor(private readonly canvas: HTMLCanvasElement, pieces: readonly PieceSpec[]) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -151,10 +158,20 @@ export class GameScene {
     // Fit the whole table, goals included, whatever the screen shape. Tilted 45°.
     const v = THREE.MathUtils.degToRad(this.camera.fov / 2)
     const hfov = Math.atan(Math.tan(v) * this.camera.aspect)
-    const dist = Math.max((TABLE_HALF_LENGTH + GOAL_DEPTH + 0.8) / Math.tan(hfov), (TABLE_HALF_WIDTH + 1.5) / Math.tan(v)) * 1.05
-    this.camera.position.set(0, dist * Math.SQRT1_2, dist * Math.SQRT1_2)
-    this.camera.lookAt(0, 0, 0.6)
+    this.fitDist = Math.max((TABLE_HALF_LENGTH + GOAL_DEPTH + 0.8) / Math.tan(hfov), (TABLE_HALF_WIDTH + 1.5) / Math.tan(v)) * 1.05
     this.camera.updateProjectionMatrix()
+    this.placeCamera()
+  }
+
+  private placeCamera() {
+    const d = (this.fitDist / this.zoom) * Math.SQRT1_2
+    this.camera.position.set(this.focus.x, d, this.focus.z + d)
+    this.camera.lookAt(this.focus.x, 0, this.focus.z + 0.6)
+  }
+
+  // Close view (follows the ball) or the whole table.
+  setClose(close: boolean): void {
+    this.zoomTarget = close ? CLOSE_ZOOM : 1
   }
 
   sync(table: Table): void {
@@ -165,6 +182,11 @@ export class GameScene {
       v.ring.emissiveIntensity = id === this.selected ? 4 : 1.2
     }
     const b = table.ballPose()
+    this.zoom += (this.zoomTarget - this.zoom) * CAMERA_EASE
+    const f = framedFocus(b.x, b.z, this.zoom)
+    this.focus.x += (f.x - this.focus.x) * CAMERA_EASE
+    this.focus.z += (f.z - this.focus.z) * CAMERA_EASE
+    this.placeCamera()
     this.ball.position.set(b.x, b.y, b.z)
     this.ball.quaternion.set(b.qx, b.qy, b.qz, b.qw)
   }

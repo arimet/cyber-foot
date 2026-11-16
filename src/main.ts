@@ -25,6 +25,7 @@ let steps = 0
 let goal: { against: Team; left: number } | null = null
 let origin: { x: number; z: number } | null = null
 let opponent: 'human' | Level | null = null // null: start menu
+let close = true // camera follows the ball, zoomed in
 // AI turn: thinking (a generator stepped once per frame), then showing its aim, then shooting.
 // Starting a new game or opening the menu drops both, so a stale AI never shoots into the next game.
 let aiThought: Generator<void, Shot> | null = null
@@ -38,10 +39,15 @@ const hud = createHud(document.getElementById('ui')!, {
   onReplay: () => newGame(opponent),
   onMenu: () => newGame(null),
   onStart: vs => newGame(vs),
+  onView() {
+    close = !close
+    scene.setClose(close)
+    refresh()
+  },
 })
 const thinking = () => !!aiThought || !!aiAim
 const refresh = () =>
-  hud.update({ score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
+  hud.update({ close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_TEAM && !match.winner
 
