@@ -17,7 +17,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night)
 .cyan { color: var(--cyan); text-shadow: 0 0 10px var(--cyan); }
 .magenta { color: var(--magenta); text-shadow: 0 0 10px var(--magenta); }
 .turn { margin-top: 4px; font-size: 14px; text-transform: uppercase; }
-button { font: inherit; color: var(--ink); background: #0b0f1c; border: 2px solid var(--cyan); border-radius: 8px; padding: 10px 22px; cursor: pointer; pointer-events: auto; box-shadow: 0 0 12px #2cf6ff55; letter-spacing: 0.1em; text-transform: uppercase; }
+button { touch-action: manipulation; font: inherit; color: var(--ink); background: #0b0f1c; border: 2px solid var(--cyan); border-radius: 8px; padding: 10px 22px; cursor: pointer; pointer-events: auto; box-shadow: 0 0 12px #2cf6ff55; letter-spacing: 0.1em; text-transform: uppercase; }
 button:disabled { opacity: 0.4; cursor: default; }
 button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .mode { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); min-width: 120px; }
@@ -31,13 +31,13 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .menu h1 { margin: 0 0 12px; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); text-shadow: 0 0 18px var(--cyan), 3px 0 0 var(--magenta); }
 .menu p { margin: 10px 0 0; text-transform: uppercase; letter-spacing: 0.1em; color: var(--magenta); text-shadow: 0 0 10px var(--magenta); }
 .menu [data-vs]:not([data-vs="human"]) { border-color: var(--magenta); box-shadow: 0 0 12px #ff3df255; }
-.corner { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; }
+.corner { position: absolute; z-index: 2; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; } /* above the menu and end overlays */
 .corner button { padding: 8px 14px; font-size: 13px; }
 .mute { min-width: 44px; }
 .rotate { display: none; }
 
 /* Phone held upright: ask to turn it. */
-@media (orientation: portrait) and (max-width: 700px) {
+@media (orientation: portrait) and (max-width: 700px) and (pointer: coarse) {
   .rotate { display: flex; position: fixed; inset: 0; z-index: 10; align-items: center; justify-content: center; padding: 24px; background: var(--night); pointer-events: auto; text-align: center; }
   .rotate p { margin: 0; font-size: 22px; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cyan); text-shadow: 0 0 12px var(--cyan); }
   .rotate p::before { content: '⟳'; display: block; font-size: 56px; margin-bottom: 12px; }
@@ -45,7 +45,7 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 /* Phone in landscape: a compact HUD at the edges, nothing over the middle of the pitch. */
 @media (max-height: 500px) {
-  .hud-top { top: max(6px, env(safe-area-inset-top)); }
+  .hud-top { top: max(6px, env(safe-area-inset-top)); right: auto; text-align: left; padding-left: max(12px, env(safe-area-inset-left)); } /* clear of the corner buttons */
   .score { font-size: 15px; }
   .score b { font-size: 20px; }
   .turn { font-size: 11px; margin-top: 0; }

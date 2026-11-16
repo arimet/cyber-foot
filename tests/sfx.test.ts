@@ -4,6 +4,7 @@ const store = new Map<string, string>()
 
 describe('sfx', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals()
     vi.resetModules()
     store.clear()
     vi.stubGlobal('localStorage', {
@@ -33,6 +34,22 @@ describe('sfx', () => {
       sfx.win()
       sfx.tip()
     }).not.toThrow()
+  })
+
+  it('unlocking resumes a context the system interrupted (iOS after a call)', async () => {
+    let resumed = 0
+    class FakeContext {
+      state = 'interrupted'
+      currentTime = 0
+      destination = {}
+      createGain() { return { gain: { value: 0 }, connect: () => ({}) } }
+      resume() { resumed++; this.state = 'running'; return Promise.resolve() }
+    }
+    vi.stubGlobal('AudioContext', FakeContext)
+    const { unlockAudio, audioRunning } = await import('../src/audio/sfx')
+    unlockAudio()
+    expect(resumed).toBe(1)
+    expect(audioRunning()).toBe(true)
   })
 
   it('works without storage at all', async () => {

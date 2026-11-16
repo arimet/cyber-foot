@@ -17,7 +17,7 @@ function audio(): { ac: AudioContext; out: GainNode } | null {
     master.gain.value = 0.5
     master.connect(ctx.destination)
   }
-  if (ctx.state === 'suspended') void ctx.resume()
+  if (ctx.state !== 'running') void ctx.resume() // 'suspended' before a gesture, 'interrupted' on iOS after a call
   // a pile-up of contacts in one frame would just be noise
   if (ctx.currentTime !== frameTime) [frameTime, frameCount] = [ctx.currentTime, 0]
   if (++frameCount > MAX_PER_FRAME) return null
@@ -29,6 +29,7 @@ export function unlockAudio() {
   if (!muted) audio()
 }
 
+export const audioRunning = () => ctx?.state === 'running'
 export const isMuted = () => muted
 export function setMuted(m: boolean) {
   muted = m

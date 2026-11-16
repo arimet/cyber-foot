@@ -1,5 +1,5 @@
 import './style.css'
-import { isMuted, setMuted, sfx, unlockAudio } from './audio/sfx'
+import { audioRunning, isMuted, setMuted, sfx, unlockAudio } from './audio/sfx'
 import { type Level, think } from './game/ai'
 import { aimFromDrag } from './game/aim'
 import { BASE_RADIUS, MAX_TURN_STEPS, PIECES } from './game/constants'
@@ -106,7 +106,12 @@ function aiFrame(now: number) {
   }
 }
 
-addEventListener('pointerdown', unlockAudio, { once: true }) // browsers start audio only after a gesture
+// Browsers start audio only after a gesture; for touch that is pointerup, not pointerdown. Keep trying until it runs.
+const unlock = () => {
+  unlockAudio()
+  if (audioRunning()) for (const ev of ['pointerup', 'keydown']) removeEventListener(ev, unlock)
+}
+for (const ev of ['pointerup', 'keydown']) addEventListener(ev, unlock)
 
 bindInput(canvas, scene, {
   pick(p, under) {
