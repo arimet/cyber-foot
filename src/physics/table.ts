@@ -29,9 +29,11 @@ const BALL_SPIN_DAMPING = 0.8
 // spin that lays it down. Fixed, so a harder hit never tips less (an added spin made pieces cartwheel at random).
 const KNOCK_SPEED = 1.0
 const KNOCK_SEVERITY = 5
-const TIP_SPIN = 18
-const FALL_SPIN_DAMPING = 0.3 // while toppling: fall fast instead of sliding half the table at a slant
-const LAID_COS = 0.2 // a toppled piece stops spinning once it leans past ~78°, so it never cartwheels back up
+const TIP_SPIN = 4 // tips the piece over its base's rim with a little to spare; gravity does the rest
+const FALL_SPIN_DAMPING = 0.3
+const LYING_DAMPING = 3 // a figure lying on its side scrapes to a halt (friction would trip it over its head)
+const FALLEN_BASE_SHARE = 0.4 // a knocked piece loses its weighted base's pull, or it would rock back up like a weeble
+const LAID_COS = 0.2 // past ~78° the piece is down: heavy spin damping, so it never cartwheels back up
 
 let ready: Promise<void> | null = null
 
@@ -169,8 +171,17 @@ export class Table {
     b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
     Table.still(b)
     b.setAngularDamping(PIECE_SPIN_DAMPING)
+    b.setLinearDamping(PIECE_DAMPING)
+    this.ballast(id, BASE_SHARE)
     this.falling.delete(id)
     this.calm = 0
+  }
+
+  // Collider 0 is the base, 1 the body.
+  private ballast(id: string, baseShare: number) {
+    const b = this.body(id), m = MASS[this.role(id)]
+    b.collider(0).setMass(m * baseShare)
+    b.collider(1).setMass(m * (1 - baseShare))
   }
 
   placeBall(x: number, y: number, z: number, vx = 0, vy = 0, vz = 0): void {
@@ -234,8 +245,9 @@ export class Table {
     for (const id of this.falling) {
       if (this.upY(id) > LAID_COS) continue
       const b = this.body(id), w = b.angvel()
-      b.setAngvel({ x: 0, y: w.y, z: 0 }, true)
+      b.setAngvel({ x: 0, y: w.y, z: 0 }, true) // down: no cartwheel over its head
       b.setAngularDamping(PIECE_SPIN_DAMPING)
+      b.setLinearDamping(LYING_DAMPING)
       this.falling.delete(id)
     }
     const goalAgainst = this.goalReported ? null : this.ballInGoal()
@@ -281,17 +293,25 @@ export class Table {
     const excess = closing - KNOCK_SPEED
     if (excess <= 0) return Math.max(0, closing)
     const ma = MASS[this.role(a)], mb = MASS[this.role(b)]
-    if ((excess * ma) / mb >= KNOCK_SEVERITY) this.topple(b, nx, nz) // b falls away from a
-    if ((excess * mb) / ma >= KNOCK_SEVERITY) this.topple(a, -nx, -nz) // a bounces back off b
+    // Bases meet low down: b's base is shoved out from under it, so its top falls back toward a,
+    // while a's base stops dead and its top carries on toward b.
+    if ((excess * ma) / mb >= KNOCK_SEVERITY) this.topple(b, -nx, -nz)
+    if ((excess * mb) / ma >= KNOCK_SEVERITY) this.topple(a, nx, nz)
     return closing
   }
 
-  // Spin that lays the piece's top down toward (nx, nz).
+  // Rolls the piece over the rim of its base on the (nx, nz) side, the way a real one goes down:
+  // the rim stays on the floor, the top swings out and gravity speeds it up.
   private topple(id: string, nx: number, nz: number) {
     this.falling.add(id)
-    const b = this.body(id), cur = b.angvel()
+    const b = this.body(id), cur = b.angvel(), v = b.linvel(), o = b.translation(), c = b.worldCom()
+    const r = BASE_RADIUS[this.role(id)]
+    const wx = nz * TIP_SPIN, wz = -nx * TIP_SPIN
+    const rx = c.x - (o.x + nx * r), ry = c.y - o.y, rz = c.z - (o.z + nz * r) // rim -> centre of mass
+    this.ballast(id, FALLEN_BASE_SHARE)
     b.setAngularDamping(FALL_SPIN_DAMPING)
-    b.setAngvel({ x: nz * TIP_SPIN, y: cur.y, z: -nx * TIP_SPIN }, true)
+    b.setAngvel({ x: wx, y: cur.y, z: wz }, true)
+    b.setLinvel({ x: v.x - wz * ry, y: v.y + wz * rx - wx * rz, z: v.z + wx * ry }, true) // v + w x r
   }
 
   private role(id: string) {
