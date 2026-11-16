@@ -9,6 +9,9 @@ import { bindInput } from './input'
 import { Table } from './physics/table'
 import { GameScene } from './render/scene'
 import { createHud } from './ui/hud'
+import { getLang } from './ui/i18n'
+
+document.documentElement.lang = getLang()
 
 const STEP = 1 / 60
 const AFTER_GOAL_STEPS = 45 // let the ball hit the net before the kickoff reset

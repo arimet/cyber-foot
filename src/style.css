@@ -34,3 +34,4 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .corner { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; }
 .corner button { padding: 8px 14px; font-size: 13px; }
 .mute { min-width: 44px; }
+.rotate { display: none; }
