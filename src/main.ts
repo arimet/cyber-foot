@@ -4,7 +4,7 @@ import { type Level, think } from './game/ai'
 import { aimFromDrag } from './game/aim'
 import { BASE_RADIUS, MAX_TURN_STEPS, PIECES } from './game/constants'
 import { Match } from './game/match'
-import type { Shot, ShotMode, Team } from './game/types'
+import { type Shot, type ShotMode, type Team, other } from './game/types'
 import { bindInput } from './input'
 import { Table } from './physics/table'
 import { GameScene } from './render/scene'
@@ -56,8 +56,10 @@ const hud = createHud(document.getElementById('ui')!, {
   },
 })
 const thinking = () => !!aiThought || !!aiAim
-const refresh = () =>
+const refresh = () => {
+  scene.setStunned(match.stunned)
   hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
+}
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_TEAM && !match.winner
 
@@ -172,6 +174,7 @@ function advance() {
     if (--goal.left <= 0) endTurn(goal.against)
   } else if (r.goalAgainst) {
     goal = { against: r.goalAgainst, left: AFTER_GOAL_STEPS }
+    scene.cheer(other(r.goalAgainst))
     sfx.goal()
   }
   else if (table.isSettled() || steps >= MAX_TURN_STEPS) endTurn(null)

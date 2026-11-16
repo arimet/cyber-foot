@@ -9,7 +9,7 @@ import type { PieceSpec, Shot, Team } from '../game/types'
 export type Contact = { kind: 'piece' | 'ball' | 'rail'; strength: number }
 const MIN_CONTACT = 0.5 // softer touches are not reported
 
-export type Pose = { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number }
+export type Pose = { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number; vx: number; vz: number }
 
 // Feel knobs, tuned by playing.
 const WALL = 0.5 // wall thickness
@@ -382,8 +382,8 @@ export class Table {
   }
 
   private static pose(b: RAPIER.RigidBody): Pose {
-    const t = b.translation(), q = b.rotation()
-    return { x: t.x, y: t.y, z: t.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w }
+    const t = b.translation(), q = b.rotation(), v = b.linvel()
+    return { x: t.x, y: t.y, z: t.z, qx: q.x, qy: q.y, qz: q.z, qw: q.w, vx: v.x, vz: v.z }
   }
 
   piecePose(id: string): Pose {

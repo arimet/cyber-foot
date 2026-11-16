@@ -6,6 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type { Team } from './game/types'
 import { type Animal, TEAM_HEX, createAnimal } from './render/animals'
+import { type Pose, REST, applyPose } from './render/rig'
 
 const animal = (new URLSearchParams(location.search).get('a') ?? 'rhino') as Animal
 const canvas = document.getElementById('c') as HTMLCanvasElement
@@ -34,18 +35,33 @@ floor.rotation.x = -Math.PI / 2
 floor.receiveShadow = true
 scene.add(floor)
 
-const team = (new URLSearchParams(location.search).get('t') ?? 'cyan') as Team
+const params = new URLSearchParams(location.search)
+const team = (params.get('t') ?? 'cyan') as Team
 // Front three-quarters, front, back three-quarters.
 // ?a=all: the five animals side by side, at three-quarters.
+// &poses: the one animal in each of its poses, nearly side-on so leans read.
+const POSES: [string, Partial<Pose>][] = [
+  ['Repos', {}],
+  ['Suit le ballon', { yaw: 0.9 }],
+  ['Armé', { leanZ: -0.25 }],
+  ['Lancé', { leanZ: -0.4, wag: 0.6 }],
+  ['Freine', { leanZ: 0.3, wag: -0.4 }],
+  ['Sonné', { pitch: 0.35, roll: 0.25, yaw: 0.25, lift: -0.3 }],
+  ['But !', { hop: 0.12, pitch: -0.35, lift: 0.5, wag: 0.4 }],
+  ['But encaissé', { leanZ: 0.12, pitch: 0.5, lift: -0.4 }],
+]
 const ALL: Animal[] = ['gorilla', 'rhino', 'bear', 'fox', 'cat']
-const SPOTS = (new URLSearchParams(location.search).get('a') === 'all')
-  ? ALL.map((who, i) => ({ who, x: (i - 2) * 1.5, z: 0, a: -0.45, s: who === 'fox' || who === 'cat' ? 0.7 : 0.85 }))
-  : [
-    { who: animal, x: -1.75, z: 0, a: -0.55, s: 1 },
-    { who: animal, x: 0, z: 0, a: 0, s: 1 },
-    { who: animal, x: 1.75, z: 0, a: Math.PI + 0.55, s: 1 },
-  ]
-for (const { who, x, z, a, s } of SPOTS) {
+const SPOTS: { who: Animal; x: number; z: number; a: number; s: number; pose?: Partial<Pose>; label?: string }[] = params.has('poses')
+  ? POSES.map(([label, pose], i) => ({ who: animal, x: ((i % 4) - 1.5) * 1.6, z: i < 4 ? -1.5 : 1.3, a: -1.25, s: 0.8, pose, label }))
+  : params.get('a') === 'all'
+    ? ALL.map((who, i) => ({ who, x: (i - 2) * 1.5, z: 0, a: -0.45, s: who === 'fox' || who === 'cat' ? 0.7 : 0.85 }))
+    : [
+      { who: animal, x: -1.75, z: 0, a: -0.55, s: 1 },
+      { who: animal, x: 0, z: 0, a: 0, s: 1 },
+      { who: animal, x: 1.75, z: 0, a: Math.PI + 0.55, s: 1 },
+    ]
+const labels: { text: string; at: THREE.Vector3 }[] = []
+for (const { who, x, z, a, s, pose, label } of SPOTS) {
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(0.78, 0.86, 0.3, 40),
     new THREE.MeshStandardMaterial({ color: 0x0d1626, roughness: 0.5 }),
@@ -54,27 +70,29 @@ for (const { who, x, z, a, s } of SPOTS) {
   base.castShadow = base.receiveShadow = true
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.86, 0.035, 8, 64).rotateX(Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color(TEAM_HEX[team]).multiplyScalar(1.35), toneMapped: false }),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(TEAM_HEX[team]), toneMapped: false }),
   )
   ring.position.y = 0.05
-  const fig = createAnimal(who, team)
-  fig.position.y = 0.3
-  fig.rotation.y = a
+  const rig = createAnimal(who, team)
+  if (pose) applyPose(rig, { ...REST, ...pose })
+  rig.root.position.y = 0.3
+  rig.root.rotation.y = a
   const holder = new THREE.Group()
-  holder.add(base, ring, fig)
+  holder.add(base, ring, rig.root)
   holder.position.set(x, 0, z)
   holder.scale.setScalar(s)
   scene.add(holder)
+  if (label) labels.push({ text: label, at: new THREE.Vector3(x, 0, z + 0.85 * s) })
 }
 
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100)
-const far = SPOTS.length > 3 ? 1.7 : 1
+const far = SPOTS.length > 5 ? 1.55 : SPOTS.length > 3 ? 1.7 : 1
 camera.position.set(0, 3.4 * far, 4.4 * far) // about 45°, as in the game
 camera.lookAt(0, 0.75, 0)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.35, 0.6)
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.15, 0.85) // as in the game
 composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
@@ -85,6 +103,14 @@ function draw() {
   camera.aspect = w / h
   camera.updateProjectionMatrix()
   composer.render()
+  for (const el of document.querySelectorAll('.label')) el.remove()
+  for (const { text, at } of labels) {
+    const p = at.clone().project(camera)
+    const el = Object.assign(document.createElement('div'), { className: 'label', textContent: text })
+    el.style.cssText = `position:fixed;left:${(p.x + 1) / 2 * w}px;top:${(1 - p.y) / 2 * h}px;transform:translate(-50%,0);` +
+      'color:#cfe;font:600 13px system-ui;letter-spacing:.05em;text-transform:uppercase'
+    document.body.append(el)
+  }
 }
 addEventListener('resize', draw)
 draw()

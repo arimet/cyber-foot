@@ -38,6 +38,28 @@ export const TEAM_HEX: Record<Team, string> = { cyan: '#2cf6ff', magenta: '#ff3d
 const GLOW_BOOST: Record<Team, number> = { cyan: 1, magenta: 1.3 }
 export const VOXEL = 0.05 // world units per voxel
 
+// Moving parts. Every voxel belongs to the part being drawn when it was last set.
+export const BODY = 0, HEAD = 1, TAIL = 2
+const PARTS = [BODY, HEAD, TAIL]
+class PartGrid extends VoxelGrid {
+  part = BODY
+  readonly parts: Uint8Array
+  readonly pivots: ([number, number, number] | null)[] = [[0, 0, 0], null, null] // in voxels; null: no such part
+  constructor(sx: number, sy: number, sz: number) {
+    super(sx, sy, sz)
+    this.parts = new Uint8Array(sx * sy * sz)
+  }
+  override set(x: number, y: number, z: number, c: number): void {
+    super.set(x, y, z, c)
+    if (x >= 0 && y >= 0 && z >= 0 && x < this.sx && y < this.sy && z < this.sz) this.parts[(y * this.sz + z) * this.sx + x] = this.part
+  }
+  // What follows is drawn into `part`, which turns about `pivot`.
+  begin(part: number, pivot: [number, number, number]) {
+    this.part = part
+    this.pivots[part] = pivot
+  }
+}
+
 // Rounded box (superellipsoid).
 function blob(g: VoxelGrid, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, c: number, p = 3) {
   for (let y = Math.floor(cy - ry); y <= cy + ry; y++)
@@ -122,8 +144,8 @@ function wrap(g: VoxelGrid, cx: number, rows: number[], z0: number, z1: number, 
 }
 
 // Heavy. Big head, square muzzle carrying a chrome horn with a red LED tip, team visor, chrome shoulder plates.
-function drawRhino(): VoxelGrid {
-  const g = new VoxelGrid(27, 32, 24)
+function drawRhino(): PartGrid {
+  const g = new PartGrid(27, 32, 24)
   const cx = 13, cz = 9
   suit(g, cx, cz, 'heavy', 'rhino')
   for (const s of [-1, 1]) {
@@ -145,8 +167,8 @@ function drawRhino(): VoxelGrid {
 }
 
 // Heavy. Punk bear: round ears, short tan muzzle, a lit mohawk, one team cyber-eye and a red monocle.
-function drawBear(): VoxelGrid {
-  const g = new VoxelGrid(27, 32, 22)
+function drawBear(): PartGrid {
+  const g = new PartGrid(27, 32, 22)
   const cx = 13, cz = 9
   suit(g, cx, cz, 'heavy', 'bear')
   blob(g, cx, 20.6, cz, 6.2, 5.4, 5.6, C('bear'), 2.4)
@@ -166,8 +188,8 @@ function drawBear(): VoxelGrid {
 }
 
 // Keeper. Gorilla: heavy brow, pale face, round team goggles, a chrome headset with a mic, huge padded gloves.
-function drawGorilla(): VoxelGrid {
-  const g = new VoxelGrid(29, 32, 22)
+function drawGorilla(): PartGrid {
+  const g = new PartGrid(29, 32, 22)
   const cx = 14, cz = 9
   suit(g, cx, cz, 'keeper', 'gorilla')
   for (const s of [-1, 1]) {
@@ -193,10 +215,11 @@ function drawGorilla(): VoxelGrid {
 }
 
 // Light. Fox: tall black-tipped ears (one cybernetic), pointed snout, team visor, bushy tail with lit rings.
-function drawFox(): VoxelGrid {
-  const g = new VoxelGrid(19, 26, 22)
+function drawFox(): PartGrid {
+  const g = new PartGrid(19, 26, 22)
   const cx = 9, cz = 8
-  suit(g, cx, cz, 'light', 'fox')
+  const neck = suit(g, cx, cz, 'light', 'fox')
+  g.begin(HEAD, [cx, neck, cz])
   blob(g, cx, 16.4, cz, 4.3, 3.8, 4, C('fox'), 2.4)
   blob(g, cx, 14.9, cz + 4.6, 1.9, 1.4, 3.1, C('fox'), 2.4) // long snout
   front(g, cx - 3, cx + 3, 13, 14, C('cream')) // cheeks and chin
@@ -210,6 +233,7 @@ function drawFox(): VoxelGrid {
   }
   front(g, cx - 4, cx + 4, 17, 17, C('team'), cz + 3) // visor
   wrap(g, cx, [17], cz - 1, cz + 2, C('team'))
+  g.begin(TAIL, [cx + 1.5, 3, cz - 4])
   for (let i = 0; i <= 10; i++) { // bushy tail sweeping up behind, white tip, two lit rings
     const r = 1.6 + Math.sin((i / 10) * Math.PI) * 1.3
     const c = i >= 9 ? 'cream' : i === 3 || i === 6 ? 'team' : 'fox'
@@ -220,8 +244,8 @@ function drawFox(): VoxelGrid {
 
 // Light. Tabby cat: small pink-lined ears, round face with whiskers, yellow slit eyes under lit cat-ear headphones,
 // thin tail curling up with a lit tip.
-function drawCat(): VoxelGrid {
-  const g = new VoxelGrid(19, 26, 20)
+function drawCat(): PartGrid {
+  const g = new PartGrid(19, 26, 20)
   const cx = 9, cz = 8
   suit(g, cx, cz, 'light', 'cat')
   blob(g, cx, 16.4, cz, 4.6, 3.9, 4.2, C('cat'), 2.2)
@@ -250,7 +274,8 @@ export type Animal = keyof typeof DRAW
 
 const solidMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 })
 const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })
-const cache = new Map<string, { solid: THREE.BufferGeometry; glow: THREE.BufferGeometry }>()
+type PartGeo = { solid: THREE.BufferGeometry; glow: THREE.BufferGeometry; pivot: THREE.Vector3 } | null
+const cache = new Map<string, PartGeo[]>()
 
 function palette(team: Team, glow: boolean): string[] {
   const teamColor = new THREE.Color(TEAM_HEX[team])
@@ -262,29 +287,51 @@ function palette(team: Team, glow: boolean): string[] {
   })]
 }
 
-// Solid voxels and glowing voxels go to two meshes; the glow mesh is unlit and bright enough to bloom.
-export function createAnimal(animal: Animal, team: Team): THREE.Group {
-  const key = `${animal}-${team}`
-  let geo = cache.get(key)
-  if (!geo) {
-    const src = DRAW[animal]()
+function buildParts(animal: Animal, team: Team): PartGeo[] {
+  const src = DRAW[animal]()
+  return PARTS.map(part => {
+    const pv = src.pivots[part]
+    if (!pv) return null
+    // Solid voxels and glowing voxels go to two meshes; the glow mesh is unlit and bright enough to bloom.
     const split = (glow: boolean) => {
       const g = new VoxelGrid(src.sx, src.sy, src.sz)
       for (let i = 0; i < src.data.length; i++) {
         const c = src.data[i]
-        if (c && GLOW.has(NAMES[c - 1]) === glow) g.data[i] = c
+        if (c && src.parts[i] === part && GLOW.has(NAMES[c - 1]) === glow) g.data[i] = c
       }
       return meshVoxels(g, palette(team, glow), { voxelSize: VOXEL, jitter: glow ? 0 : 0.03 })
     }
     const glow = split(true)
     const colors = glow.getAttribute('color') as THREE.BufferAttribute
     for (let i = 0; i < colors.array.length; i++) (colors.array as Float32Array)[i] *= GLOW_BOOST[team]
-    geo = { solid: split(false), glow }
-    cache.set(key, geo)
-  }
-  const group = new THREE.Group()
-  const solid = new THREE.Mesh(geo.solid, solidMat)
-  solid.castShadow = solid.receiveShadow = true
-  group.add(solid, new THREE.Mesh(geo.glow, glowMat))
-  return group
+    const pivot = new THREE.Vector3((pv[0] + 0.5 - src.sx / 2) * VOXEL, pv[1] * VOXEL, (pv[2] + 0.5 - src.sz / 2) * VOXEL)
+    return { solid: split(false), glow, pivot }
+  })
+}
+
+// The figure, standing at the origin and facing +z. `body` turns about the feet and carries `head` and `tail`,
+// each turning about its own pivot (neck, root of the tail). Animals not split yet have no head or tail.
+export type Rig = { root: THREE.Group; body: THREE.Group; head: THREE.Group | null; tail: THREE.Group | null }
+
+export function createAnimal(animal: Animal, team: Team): Rig {
+  const key = `${animal}-${team}`
+  let parts = cache.get(key)
+  if (!parts) cache.set(key, parts = buildParts(animal, team))
+  const root = new THREE.Group(), body = new THREE.Group()
+  root.add(body)
+  const groups = parts.map((geo, part): THREE.Group | null => {
+    if (!geo) return null
+    const holder = part === BODY ? body : new THREE.Group()
+    const solid = new THREE.Mesh(geo.solid, solidMat), glow = new THREE.Mesh(geo.glow, glowMat)
+    solid.castShadow = solid.receiveShadow = true
+    if (part !== BODY) {
+      holder.position.copy(geo.pivot)
+      solid.position.copy(geo.pivot).negate()
+      glow.position.copy(geo.pivot).negate()
+      body.add(holder)
+    }
+    holder.add(solid, glow)
+    return holder
+  })
+  return { root, body, head: groups[HEAD], tail: groups[TAIL] }
 }

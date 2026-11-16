@@ -6,8 +6,9 @@ import {
 } from '../game/constants'
 import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
-import { type Animal, createAnimal } from './animals'
+import { type Animal, type Rig, createAnimal } from './animals'
 import { framedFocus } from './framing'
+import { FigureMotion, type Mood, applyPose } from './rig'
 import { createRoom } from './room'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
@@ -25,7 +26,11 @@ const CAMERA_EASE = 0.06 // share of the remaining way covered each frame
 const neon = (color: number, intensity = 1.6) =>
   new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity })
 
-type PieceView = { group: THREE.Group; ring: THREE.MeshStandardMaterial }
+type PieceView = {
+  group: THREE.Group; ring: THREE.MeshStandardMaterial; team: Team
+  rig: Rig; motion: FigureMotion; vel: { x: number; z: number }; seen: { x: number; z: number }
+}
+const COIL = 0.25 // lean back (rad) at full pull
 
 export class GameScene {
   private readonly renderer: THREE.WebGLRenderer
@@ -46,6 +51,10 @@ export class GameScene {
   private zoomTarget = CLOSE_ZOOM
   private zoom = CLOSE_ZOOM
   private focus = { x: 0, z: 0 }
+  private aim: { x: number; z: number; power: number } | null = null
+  private stunned: ReadonlySet<string> = new Set()
+  private mood: { scorer: Team; since: number } | null = null
+  private lastT = -1
 
   constructor(private readonly canvas: HTMLCanvasElement, pieces: readonly PieceSpec[]) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -142,7 +151,8 @@ export class GameScene {
     const ring = neon(TEAM_COLOR[p.team], 0.8)
     const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 8, 48).rotateX(Math.PI / 2), ring)
     ringMesh.position.y = 0.06
-    const figure = createAnimal(ANIMAL[p.id.split('-')[1]], p.team)
+    const rig = createAnimal(ANIMAL[p.id.split('-')[1]], p.team)
+    const figure = rig.root
     const box = new THREE.Box3().setFromObject(figure)
     figure.scale.setScalar((h + FIGURE_OVERHANG) / (box.max.y - box.min.y))
     figure.position.y = BASE_H
@@ -150,7 +160,8 @@ export class GameScene {
     group.add(base, ringMesh, figure)
     group.userData.id = p.id
     this.scene.add(group)
-    return { group, ring }
+    const phase = [...p.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 7 // so they don't breathe in step
+    return { group, ring, team: p.team, rig, motion: new FigureMotion(phase), vel: { x: 0, z: 0 }, seen: { x: 0, z: 0 } }
   }
 
   private resize() {
@@ -182,7 +193,8 @@ export class GameScene {
       const p = table.piecePose(id)
       v.group.position.set(p.x, p.y, p.z)
       v.group.quaternion.set(p.qx, p.qy, p.qz, p.qw)
-      v.ring.emissiveIntensity = id === this.selected ? 2.5 : 0.8
+      v.vel = { x: p.vx, z: p.vz }
+      v.ring.emissiveIntensity = id === this.selected ? 1.6 : 0.8
     }
     const b = table.ballPose()
     this.zoom += (this.zoomTarget - this.zoom) * CAMERA_EASE
@@ -192,6 +204,34 @@ export class GameScene {
     this.placeCamera()
     this.ball.position.set(b.x, b.y, b.z)
     this.ball.quaternion.set(b.qx, b.qy, b.qz, b.qw)
+  }
+
+  private readonly q = new THREE.Quaternion()
+  private readonly qi = new THREE.Quaternion()
+  private readonly v3 = new THREE.Vector3()
+
+  private animate(t: number, dt: number) {
+    const ball = this.ball.position
+    for (const [id, v] of this.views) {
+      // the rig's axes: the base's tilt and turn, then the figure's three-quarter turn
+      this.q.copy(v.group.quaternion).multiply(v.rig.root.quaternion)
+      this.qi.copy(this.q).invert()
+      const turn = (q: THREE.Quaternion) => (x: number, z: number) => {
+        this.v3.set(x, 0, z).applyQuaternion(q)
+        return { x: this.v3.x, z: this.v3.z }
+      }
+      const toLocal = turn(this.qi), toWorld = turn(this.q)
+      const aiming = id === this.selected && this.aim
+      const pos = v.group.position
+      const look = aiming ? toLocal(this.aim!.x, this.aim!.z) : toLocal(ball.x - pos.x, ball.z - pos.z)
+      const coil = aiming ? toLocal(-this.aim!.x * this.aim!.power * COIL, -this.aim!.z * this.aim!.power * COIL) : { x: 0, z: 0 }
+      const mood: Mood = this.mood ? (this.mood.scorer === v.team ? 'cheer' : 'sulk') : null
+      const dvx = v.vel.x - v.seen.x, dvz = v.vel.z - v.seen.z
+      v.seen = v.vel
+      applyPose(v.rig, v.motion.update({
+        t, dt, dvx, dvz, look, coil, stunned: this.stunned.has(id), mood, moodT: this.mood ? t - this.mood.since : 0,
+      }, toLocal, toWorld))
+    }
   }
 
   private aimRay(clientX: number, clientY: number) {
@@ -222,7 +262,17 @@ export class GameScene {
     this.selected = id
   }
 
+  // Pieces lying stunned, and the team that just scored (the other one sulks).
+  setStunned(ids: ReadonlySet<string>): void {
+    this.stunned = ids
+  }
+
+  cheer(scorer: Team): void {
+    this.mood = { scorer, since: this.lastT }
+  }
+
   setAim(origin: { x: number; z: number } | null, dirX: number, dirZ: number, power: number, role: Role): void {
+    this.aim = origin ? { x: dirX, z: dirZ, power } : null
     this.arrow.visible = !!origin
     if (!origin) return
     const len = arrowLength(power, role)
@@ -234,6 +284,9 @@ export class GameScene {
   }
 
   render(t: number): void {
+    const dt = this.lastT < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.lastT))
+    this.lastT = t
+    if (dt > 0) this.animate(t, dt)
     this.room.update(t)
     this.composer.render()
   }
