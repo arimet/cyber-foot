@@ -264,30 +264,37 @@ export class Table {
     this.body(id).setRotation({ x: 0, y: 0, z: Math.sin(angleRad / 2), w: Math.cos(angleRad / 2) }, true)
   }
 
-  // Upright where it lies, pushed clear of anything its base would overlap, kept on the table.
+  // Upright where it lies if that spot is free, else the nearest free spot on rings around it, kept on the table.
+  // A lying piece blocks the strip from its base to its head, not just its base circle.
   standUp(id: string): void {
     const r = BASE_RADIUS[this.role(id)]
-    let { x, z } = this.body(id).translation()
-    const others = [
-      ...this.pieces.filter(p => p.id !== id).map(p => ({ b: this.body(p.id), r: BASE_RADIUS[p.role] })),
-      { b: this.ball, r: BALL_RADIUS },
+    const here = this.body(id).translation()
+    const blockers = [
+      ...this.pieces.filter(p => p.id !== id).map(p => {
+        const b = this.body(p.id), t = b.translation(), q = b.rotation(), h = BODY_HEIGHT[p.role]
+        const ux = 2 * (q.x * q.y - q.w * q.z), uz = 2 * (q.y * q.z + q.w * q.x) // local up axis, on the floor
+        return { ax: t.x, az: t.z, bx: t.x + ux * h, bz: t.z + uz * h, r: BASE_RADIUS[p.role] }
+      }),
+      (() => { const t = this.ball.translation(); return { ax: t.x, az: t.z, bx: t.x, bz: t.z, r: BALL_RADIUS } })(),
     ]
-    for (let pass = 0; pass < 10; pass++) {
-      let moved = false
-      for (const o of others) {
-        const t = o.b.translation()
-        const dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz), need = r + o.r + 0.01
-        if (d >= need) continue
-        const [ux, uz] = d > 1e-6 ? [dx / d, dz / d] : [Math.sign(-x) || 1, 0] // dead centre: step toward midfield
-        x = t.x + ux * need
-        z = t.z + uz * need
-        moved = true
+    const maxX = TABLE_HALF_LENGTH - r, maxZ = TABLE_HALF_WIDTH - r
+    const free = (x: number, z: number) =>
+      Math.abs(x) <= maxX && Math.abs(z) <= maxZ && blockers.every(o => segDist(x, z, o) >= r + o.r + 0.01)
+    const x0 = Math.max(-maxX, Math.min(maxX, here.x)), z0 = Math.max(-maxZ, Math.min(maxZ, here.z))
+    let spot = { x: x0, z: z0 }
+    search: if (!free(x0, z0)) {
+      for (let ring = 1; ring <= 40; ring++) {
+        const d = ring * 0.25
+        for (let k = 0; k < 24; k++) {
+          const a = (k / 24) * Math.PI * 2
+          if (free(x0 + d * Math.cos(a), z0 + d * Math.sin(a))) {
+            spot = { x: x0 + d * Math.cos(a), z: z0 + d * Math.sin(a) }
+            break search
+          }
+        }
       }
-      x = Math.max(-TABLE_HALF_LENGTH + r, Math.min(TABLE_HALF_LENGTH - r, x))
-      z = Math.max(-TABLE_HALF_WIDTH + r, Math.min(TABLE_HALF_WIDTH - r, z))
-      if (!moved) break
     }
-    this.placePiece(id, x, z)
+    this.placePiece(id, spot.x, spot.z)
   }
 
   isSettled(): boolean {
@@ -314,4 +321,10 @@ export class Table {
   ballPose(): Pose {
     return Table.pose(this.ball)
   }
+}
+
+const segDist = (x: number, z: number, s: { ax: number; az: number; bx: number; bz: number }) => {
+  const dx = s.bx - s.ax, dz = s.bz - s.az, len2 = dx * dx + dz * dz
+  const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / len2)) : 0
+  return Math.hypot(x - (s.ax + t * dx), z - (s.az + t * dz))
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  BALL_RADIUS, BASE_RADIUS, GLASS_HEIGHT, GOAL_DEPTH, KICKOFF, MAX_TURN_STEPS, PIECES, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH,
+  BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, KICKOFF, MAX_TURN_STEPS, PIECES, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH,
 } from '../src/game/constants'
 import { Table } from '../src/physics/table'
 
@@ -200,6 +200,28 @@ describe('lob and tipping', () => {
     table.tilt('cyan-light1', 0.6)
     expect(table.isTipped('cyan-light1')).toBe(false)
     expect(table.tippedIds()).toEqual([])
+  })
+
+  it('standUp against the rail still clears its neighbour', () => {
+    table.placePiece('cyan-heavy1', 9.95, -5)
+    table.tilt('cyan-heavy1', 1.5)
+    table.placePiece('cyan-heavy2', 8.5, -5)
+    table.standUp('cyan-heavy1')
+    const a = table.piecePose('cyan-heavy1'), b = table.piecePose('cyan-heavy2')
+    expect(dist(a, b)).toBeGreaterThanOrEqual(2 * BASE_RADIUS.heavy - 1e-6)
+    expect(a.x).toBeLessThanOrEqual(TABLE_HALF_LENGTH - BASE_RADIUS.heavy + 1e-6)
+  })
+
+  it("standUp does not stand a piece inside a lying piece's body", () => {
+    table.placePiece('magenta-heavy1', 0, 0)
+    table.tilt('magenta-heavy1', Math.PI / 2) // lies with its head toward -x
+    table.placePiece('cyan-light1', -1, 0.3)
+    table.tilt('cyan-light1', 1.5)
+    table.standUp('cyan-light1')
+    const p = table.piecePose('cyan-light1')
+    // closest point of the lying body (x in [-BODY_HEIGHT, 0], z = 0)
+    const cx = Math.max(-BODY_HEIGHT.heavy, Math.min(0, p.x))
+    expect(Math.hypot(p.x - cx, p.z)).toBeGreaterThanOrEqual(BASE_RADIUS.light + BASE_RADIUS.heavy * 0.55 - 1e-6)
   })
 
   it('standUp puts the piece upright and off any overlap', () => {
