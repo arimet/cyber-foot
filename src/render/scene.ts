@@ -6,11 +6,17 @@ import {
 } from '../game/constants'
 import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
+import { type Animal, createAnimal } from './animals'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 
 export const TEAM_COLOR: Record<Team, number> = { cyan: 0x2cf6ff, magenta: 0xff3df2 }
-const BODY_COLOR: Record<Role, number> = { heavy: 0x8d96a8, light: 0xff8a2a, keeper: 0x4a3328 }
 const LINE = 0x2cf6ff
 const BASE_H = 0.4
+const ANIMAL: Record<string, Animal> = { keeper: 'gorilla', heavy1: 'rhino', heavy2: 'bear', light1: 'fox', light2: 'cat' }
+const FIGURE_OVERHANG = 0.25 // the figure may stand a little taller than its physics body
 
 const neon = (color: number, intensity = 1.6) =>
   new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity })
@@ -19,6 +25,7 @@ type PieceView = { group: THREE.Group; ring: THREE.MeshStandardMaterial }
 
 export class GameScene {
   private readonly renderer: THREE.WebGLRenderer
+  private readonly composer: EffectComposer
   private readonly scene = new THREE.Scene()
   private readonly camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200)
   private readonly views = new Map<string, PieceView>()
@@ -36,9 +43,15 @@ export class GameScene {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     this.scene.background = new THREE.Color(0x05050c)
     this.scene.add(new THREE.HemisphereLight(0x8090ff, 0x100818, 0.9))
-    const key = new THREE.DirectionalLight(0xffffff, 1.4)
+    const key = new THREE.DirectionalLight(0xffffff, 1.6)
     key.position.set(-6, 14, 10)
-    this.scene.add(key)
+    const fill = new THREE.DirectionalLight(0xc8d8ff, 0.9) // from the camera side, so faces read
+    fill.position.set(2, 6, 14)
+    this.scene.add(key, fill)
+    this.composer = new EffectComposer(this.renderer)
+    this.composer.addPass(new RenderPass(this.scene, this.camera))
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.35, 0.6))
+    this.composer.addPass(new OutputPass())
 
     this.buildTable()
     for (const p of pieces) this.views.set(p.id, this.buildPiece(p))
@@ -107,7 +120,7 @@ export class GameScene {
     }
   }
 
-  // Placeholder figure until the voxel animals: glowing base ring, a block body with a team-colour visor.
+  // Glowing base ring and the team's voxel animal on it.
   private buildPiece(p: PieceSpec): PieceView {
     const r = BASE_RADIUS[p.role], h = BODY_HEIGHT[p.role] - BASE_H
     const group = new THREE.Group()
@@ -119,12 +132,12 @@ export class GameScene {
     const ring = neon(TEAM_COLOR[p.team], 1.2)
     const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 8, 48).rotateX(Math.PI / 2), ring)
     ringMesh.position.y = 0.06
-    const w = r * 1.05
-    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.8), new THREE.MeshStandardMaterial({ color: BODY_COLOR[p.role], roughness: 0.7 }))
-    body.position.y = BASE_H + h / 2
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, h * 0.12, w * 0.84), neon(TEAM_COLOR[p.team], 2))
-    visor.position.y = BASE_H + h * 0.8
-    group.add(base, ringMesh, body, visor)
+    const figure = createAnimal(ANIMAL[p.id.split('-')[1]], p.team)
+    const box = new THREE.Box3().setFromObject(figure)
+    figure.scale.setScalar((h + FIGURE_OVERHANG) / (box.max.y - box.min.y))
+    figure.position.y = BASE_H
+    figure.rotation.y = p.team === 'cyan' ? Math.PI / 4 : -Math.PI / 4 // three-quarters toward the goal it attacks
+    group.add(base, ringMesh, figure)
     group.userData.id = p.id
     this.scene.add(group)
     return { group, ring }
@@ -133,6 +146,7 @@ export class GameScene {
   private resize() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight
     this.renderer.setSize(w, h, false)
+    this.composer.setSize(w, h)
     this.camera.aspect = w / h
     // Fit the whole table, goals included, whatever the screen shape. Tilted 45°.
     const v = THREE.MathUtils.degToRad(this.camera.fov / 2)
@@ -195,6 +209,6 @@ export class GameScene {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera)
+    this.composer.render()
   }
 }

@@ -36,12 +36,16 @@ scene.add(floor)
 
 const team = (new URLSearchParams(location.search).get('t') ?? 'cyan') as Team
 // Front three-quarters, front, back three-quarters.
-const SPOTS = [
-  { x: -1.75, z: 0, a: -0.55, s: 1 },
-  { x: 0, z: 0, a: 0, s: 1 },
-  { x: 1.75, z: 0, a: Math.PI + 0.55, s: 1 },
-]
-for (const { x, z, a, s } of SPOTS) {
+// ?a=all: the five animals side by side, at three-quarters.
+const ALL: Animal[] = ['gorilla', 'rhino', 'bear', 'fox', 'cat']
+const SPOTS = (new URLSearchParams(location.search).get('a') === 'all')
+  ? ALL.map((who, i) => ({ who, x: (i - 2) * 1.5, z: 0, a: -0.45, s: who === 'fox' || who === 'cat' ? 0.7 : 0.85 }))
+  : [
+    { who: animal, x: -1.75, z: 0, a: -0.55, s: 1 },
+    { who: animal, x: 0, z: 0, a: 0, s: 1 },
+    { who: animal, x: 1.75, z: 0, a: Math.PI + 0.55, s: 1 },
+  ]
+for (const { who, x, z, a, s } of SPOTS) {
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(0.78, 0.86, 0.3, 40),
     new THREE.MeshStandardMaterial({ color: 0x0d1626, roughness: 0.5 }),
@@ -53,7 +57,7 @@ for (const { x, z, a, s } of SPOTS) {
     new THREE.MeshBasicMaterial({ color: new THREE.Color(TEAM_HEX[team]).multiplyScalar(1.35), toneMapped: false }),
   )
   ring.position.y = 0.05
-  const fig = createAnimal(animal, team)
+  const fig = createAnimal(who, team)
   fig.position.y = 0.3
   fig.rotation.y = a
   const holder = new THREE.Group()
@@ -64,7 +68,8 @@ for (const { x, z, a, s } of SPOTS) {
 }
 
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100)
-camera.position.set(0, 3.4, 4.4) // about 45°, as in the game
+const far = SPOTS.length > 3 ? 1.7 : 1
+camera.position.set(0, 3.4 * far, 4.4 * far) // about 45°, as in the game
 camera.lookAt(0, 0.75, 0)
 
 const composer = new EffectComposer(renderer)
