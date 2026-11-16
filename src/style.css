@@ -10,3 +10,19 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night); color: var(--ink); font: 600 16px/1.3 var(--font); -webkit-font-smoothing: antialiased; }
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; }
+
+.hud-top { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; letter-spacing: 0.08em; }
+.score { font-size: 22px; }
+.score b { font-size: 30px; color: #fff; text-shadow: 0 0 10px #fff8; }
+.cyan { color: var(--cyan); text-shadow: 0 0 10px var(--cyan); }
+.magenta { color: var(--magenta); text-shadow: 0 0 10px var(--magenta); }
+.turn { margin-top: 4px; font-size: 14px; text-transform: uppercase; }
+button { font: inherit; color: var(--ink); background: #0b0f1c; border: 2px solid var(--cyan); border-radius: 8px; padding: 10px 22px; cursor: pointer; pointer-events: auto; box-shadow: 0 0 12px #2cf6ff55; letter-spacing: 0.1em; text-transform: uppercase; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.mode { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); min-width: 120px; }
+.mode.lob { border-color: var(--magenta); box-shadow: 0 0 12px #ff3df255; }
+.end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #05050cc0; pointer-events: auto; }
+.end p { margin: 0; font-size: 44px; text-transform: uppercase; }
+.end.cyan p { color: var(--cyan); text-shadow: 0 0 18px var(--cyan); }
+.end.magenta p { color: var(--magenta); text-shadow: 0 0 18px var(--magenta); }
