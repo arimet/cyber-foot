@@ -35,3 +35,24 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .corner button { padding: 8px 14px; font-size: 13px; }
 .mute { min-width: 44px; }
 .rotate { display: none; }
+
+/* Phone held upright: ask to turn it. */
+@media (orientation: portrait) and (max-width: 700px) {
+  .rotate { display: flex; position: fixed; inset: 0; z-index: 10; align-items: center; justify-content: center; padding: 24px; background: var(--night); pointer-events: auto; text-align: center; }
+  .rotate p { margin: 0; font-size: 22px; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cyan); text-shadow: 0 0 12px var(--cyan); }
+  .rotate p::before { content: '⟳'; display: block; font-size: 56px; margin-bottom: 12px; }
+}
+
+/* Phone in landscape: a compact HUD at the edges, nothing over the middle of the pitch. */
+@media (max-height: 500px) {
+  .hud-top { top: max(6px, env(safe-area-inset-top)); }
+  .score { font-size: 15px; }
+  .score b { font-size: 20px; }
+  .turn { font-size: 11px; margin-top: 0; }
+  .corner { top: max(6px, env(safe-area-inset-top)); gap: 6px; }
+  .corner button { padding: 6px 10px; font-size: 11px; min-height: 44px; }
+  .mode { left: auto; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); transform: none; min-width: 88px; min-height: 44px; padding: 8px 14px; }
+  .menu h1 { font-size: 28px; margin-bottom: 4px; }
+  .menu { gap: 8px; }
+  .end p { font-size: 30px; }
+}
