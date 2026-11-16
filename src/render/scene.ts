@@ -30,7 +30,7 @@ type PieceView = {
   group: THREE.Group; ring: THREE.MeshStandardMaterial; team: Team
   rig: Rig; motion: FigureMotion; vel: { x: number; z: number }; seen: { x: number; z: number }
 }
-const COIL = 0.25 // lean back (rad) at full pull
+const COIL = 0.4 // lean back (rad) at full pull
 
 export class GameScene {
   private readonly renderer: THREE.WebGLRenderer
@@ -264,7 +264,8 @@ export class GameScene {
 
   // Pieces lying stunned, and the team that just scored (the other one sulks).
   setStunned(ids: ReadonlySet<string>): void {
-    this.stunned = ids
+    for (const id of this.stunned) if (!ids.has(id)) this.views.get(id)?.motion.rise(Math.max(0, this.lastT)) // stood back up
+    this.stunned = new Set(ids)
   }
 
   cheer(scorer: Team): void {
