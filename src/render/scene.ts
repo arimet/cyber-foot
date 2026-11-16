@@ -8,6 +8,7 @@ import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
 import { type Animal, createAnimal } from './animals'
 import { framedFocus } from './framing'
+import { createRoom } from './room'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -40,6 +41,7 @@ export class GameScene {
   private readonly ray = new THREE.Raycaster()
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private selected: string | null = null
+  private readonly room = createRoom()
   private fitDist = 30 // camera distance that frames the whole table
   private zoomTarget = CLOSE_ZOOM
   private zoom = CLOSE_ZOOM
@@ -60,6 +62,7 @@ export class GameScene {
     this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.35, 0.6))
     this.composer.addPass(new OutputPass())
 
+    this.scene.add(this.room.group)
     this.buildTable()
     for (const p of pieces) this.views.set(p.id, this.buildPiece(p))
     this.ball = new THREE.Mesh(
@@ -230,7 +233,8 @@ export class GameScene {
     this.arrowMat.color.setHex(LINE).lerp(new THREE.Color(0xff2d55), power)
   }
 
-  render(): void {
+  render(t: number): void {
+    this.room.update(t)
     this.composer.render()
   }
 }

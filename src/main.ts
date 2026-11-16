@@ -159,7 +159,7 @@ function frame(now: number) {
   }
   aiFrame(now)
   scene.sync(table)
-  scene.render()
+  scene.render(now / 1000)
   requestAnimationFrame(frame)
 }
 refresh()
