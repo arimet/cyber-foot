@@ -59,7 +59,7 @@ export class GameScene {
     this.scene.add(key, fill)
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.35, 0.6))
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.15, 0.85))
     this.composer.addPass(new OutputPass())
 
     this.scene.add(this.room.group)
@@ -106,7 +106,7 @@ export class GameScene {
     }
     // rails, with a neon top edge
     const rail = new THREE.MeshStandardMaterial({ color: 0x141a2a, roughness: 0.6 })
-    const edge = neon(LINE, 1.2)
+    const edge = neon(LINE, 0.8)
     const railBox = (x: number, z: number, lx: number, lz: number) => {
       this.add(new THREE.BoxGeometry(lx, RAIL_HEIGHT, lz), rail, x, RAIL_HEIGHT / 2, z)
       this.add(new THREE.BoxGeometry(lx, 0.04, lz), edge, x, RAIL_HEIGHT + 0.02, z)
@@ -118,7 +118,7 @@ export class GameScene {
     }
     // goals: posts, crossbar, back frame in the defending team's colour
     for (const [s, team] of [[-1, 'cyan'], [1, 'magenta']] as const) {
-      const mat = neon(TEAM_COLOR[team], 2)
+      const mat = neon(TEAM_COLOR[team], 1.3)
       const post = new THREE.CylinderGeometry(0.06, 0.06, GOAL_HEIGHT, 8)
       for (const u of [-1, 1]) {
         this.add(post, mat, s * L, GOAL_HEIGHT / 2, u * GOAL_HALF_WIDTH)
@@ -139,7 +139,7 @@ export class GameScene {
       new THREE.MeshStandardMaterial({ color: 0x0d1626, roughness: 0.5 }),
     )
     base.position.y = BASE_H / 2
-    const ring = neon(TEAM_COLOR[p.team], 1.2)
+    const ring = neon(TEAM_COLOR[p.team], 0.8)
     const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 8, 48).rotateX(Math.PI / 2), ring)
     ringMesh.position.y = 0.06
     const figure = createAnimal(ANIMAL[p.id.split('-')[1]], p.team)
@@ -182,7 +182,7 @@ export class GameScene {
       const p = table.piecePose(id)
       v.group.position.set(p.x, p.y, p.z)
       v.group.quaternion.set(p.qx, p.qy, p.qz, p.qw)
-      v.ring.emissiveIntensity = id === this.selected ? 4 : 1.2
+      v.ring.emissiveIntensity = id === this.selected ? 2.5 : 0.8
     }
     const b = table.ballPose()
     this.zoom += (this.zoomTarget - this.zoom) * CAMERA_EASE

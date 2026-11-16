@@ -35,7 +35,7 @@ const GLOW = new Set<ColorName>(['team', 'led', 'ledRed'])
 
 export const TEAM_HEX: Record<Team, string> = { cyan: '#2cf6ff', magenta: '#ff3df2' }
 // Glow colours pushed above 1 so the bloom pass picks them up; magenta reads darker to it, so it gets more.
-const GLOW_BOOST: Record<Team, number> = { cyan: 1.35, magenta: 1.8 }
+const GLOW_BOOST: Record<Team, number> = { cyan: 1, magenta: 1.3 }
 export const VOXEL = 0.05 // world units per voxel
 
 // Rounded box (superellipsoid).
