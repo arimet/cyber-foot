@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  BALL_RADIUS, GLASS_HEIGHT, GOAL_DEPTH, KICKOFF, MAX_TURN_STEPS, PIECES, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH,
+  BALL_RADIUS, BASE_RADIUS, GLASS_HEIGHT, GOAL_DEPTH, KICKOFF, MAX_TURN_STEPS, PIECES, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH,
 } from '../src/game/constants'
 import { Table } from '../src/physics/table'
 
@@ -98,5 +98,79 @@ describe('Table', () => {
     const b = await play()
     expect(Math.abs(a.x - b.x)).toBeLessThan(1e-6)
     expect(Math.abs(a.z - b.z)).toBeLessThan(1e-6)
+  })
+})
+
+describe('lob and tipping', () => {
+  beforeEach(async () => {
+    table = await Table.create()
+    table.reset()
+  })
+
+  const ballPeak = () => {
+    let maxY = 0
+    for (let i = 0; i < MAX_TURN_STEPS; i++) {
+      table.step()
+      maxY = Math.max(maxY, table.ballPose().y)
+      if (table.isSettled()) break
+    }
+    return maxY
+  }
+
+  it('a lob lifts the ball', () => {
+    table.placePiece('cyan-light1', -3, 0)
+    table.placeBall(-1.8, BALL_RADIUS, 0)
+    table.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.8, mode: 'lob' })
+    expect(ballPeak()).toBeGreaterThan(4 * BALL_RADIUS)
+  })
+
+  it('a ground shot keeps the ball low', () => {
+    table.placePiece('cyan-light1', -3, 0)
+    table.placeBall(-1.8, BALL_RADIUS, 0)
+    table.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.8, mode: 'ground' })
+    expect(ballPeak()).toBeLessThan(2 * BALL_RADIUS)
+  })
+
+  it.each(['cyan-keeper', 'cyan-heavy1', 'cyan-light1'])('a full-power ground shot on an open table does not tip %s', id => {
+    table.placePiece(id, -8, -5)
+    table.shoot({ pieceId: id, dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    table.runTurn()
+    expect(table.isTipped(id)).toBe(false)
+  })
+
+  it('a heavy piece at full power can tip a light one', () => {
+    table.placePiece('magenta-light1', 0, 5.2)
+    table.placePiece('cyan-heavy1', -3, 5.2)
+    table.shoot({ pieceId: 'cyan-heavy1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    table.runTurn()
+    expect(table.isTipped('magenta-light1')).toBe(true)
+  })
+
+  it('a soft bump tips nobody', () => {
+    table.placePiece('magenta-light1', 0, 5.2)
+    table.placePiece('cyan-heavy1', -1.7, 5.2)
+    table.shoot({ pieceId: 'cyan-heavy1', dirX: 1, dirZ: 0, power: 0.3, mode: 'ground' })
+    table.runTurn()
+    expect(table.tippedIds()).toEqual([])
+    expect(table.piecePose('magenta-light1').x).toBeGreaterThan(0.01) // it was hit
+  })
+
+  it('tilt past 45° counts as tipped, below does not', () => {
+    table.tilt('cyan-light1', 0.9)
+    expect(table.isTipped('cyan-light1')).toBe(true)
+    table.tilt('cyan-light1', 0.6)
+    expect(table.isTipped('cyan-light1')).toBe(false)
+    expect(table.tippedIds()).toEqual([])
+  })
+
+  it('standUp puts the piece upright and off any overlap', () => {
+    const id = 'cyan-light1'
+    table.tilt(id, 1.5)
+    const p = table.piecePose(id)
+    table.placeBall(p.x, BALL_RADIUS, p.z)
+    table.standUp(id)
+    expect(table.isTipped(id)).toBe(false)
+    const q = table.piecePose(id), b = table.ballPose()
+    expect(dist(q, b)).toBeGreaterThanOrEqual(BASE_RADIUS.light + BALL_RADIUS - 1e-6)
   })
 })
