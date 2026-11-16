@@ -51,7 +51,28 @@ export class Table {
     return new Table()
   }
 
-  private constructor() {
+  // A copy of the exact world, contact caches included, so a shot played on it predicts the real one.
+  // Counters start fresh. Call free() when done: the world lives in WASM memory.
+  clone(): Table {
+    return new Table(RAPIER.World.restoreSnapshot(this.world.takeSnapshot()), this)
+  }
+
+  free(): void {
+    this.world.free()
+    this.events.free()
+  }
+
+  private constructor(world?: RAPIER.World, src?: Table) {
+    if (world && src) {
+      // Handles survive the snapshot; the JS wrappers must be fetched from the new world.
+      this.world = world
+      for (const [id, b] of src.bodies) this.bodies.set(id, world.getRigidBody(b.handle))
+      this.ball = world.getRigidBody(src.ball.handle)
+      this.ballCollider = src.ballCollider
+      for (const [h, id] of src.colliderOwner) this.colliderOwner.set(h, id)
+      for (const id of src.falling) this.falling.add(id)
+      return
+    }
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
     this.buildArena()
     for (const p of this.pieces) this.bodies.set(p.id, this.buildPiece(p))

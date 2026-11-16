@@ -235,3 +235,38 @@ describe('lob and tipping', () => {
     expect(dist(q, b)).toBeGreaterThanOrEqual(BASE_RADIUS.light + BALL_RADIUS - 1e-6)
   })
 })
+
+describe('clone', () => {
+  const allPoses = (t: Table) => [t.ballPose(), ...PIECES.map(p => t.piecePose(p.id))]
+
+  it('a clone predicts the real outcome exactly', async () => {
+    const t = await Table.create()
+    t.shoot({ pieceId: 'cyan-light1', dirX: 0.8, dirZ: 0.6, power: 0.9, mode: 'ground' })
+    t.runTurn()
+    t.shoot({ pieceId: 'magenta-heavy1', dirX: -1, dirZ: 0.1, power: 1, mode: 'ground' })
+    t.runTurn()
+    const c = t.clone()
+    const shot = { pieceId: 'cyan-light2', dirX: 0.9, dirZ: -0.4, power: 0.8, mode: 'lob' as const }
+    t.shoot(shot)
+    c.shoot(shot)
+    t.runTurn()
+    c.runTurn()
+    const a = allPoses(t), b = allPoses(c)
+    a.forEach((p, i) => {
+      expect(Math.abs(p.x - b[i].x)).toBeLessThan(1e-6)
+      expect(Math.abs(p.y - b[i].y)).toBeLessThan(1e-6)
+      expect(Math.abs(p.z - b[i].z)).toBeLessThan(1e-6)
+    })
+    c.free()
+  })
+
+  it('simulating on a clone leaves the real table untouched', async () => {
+    const t = await Table.create()
+    const before = JSON.stringify(allPoses(t))
+    const c = t.clone()
+    c.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    c.runTurn()
+    c.free()
+    expect(JSON.stringify(allPoses(t))).toBe(before)
+  })
+})
