@@ -26,7 +26,8 @@ const BALL_SPIN_DAMPING = 0.8
 // spin that lays it down. Fixed, so a harder hit never tips less (an added spin made pieces cartwheel at random).
 const KNOCK_SPEED = 1.0
 const KNOCK_SEVERITY = 5
-const TIP_SPIN = 24
+const TIP_SPIN = 18
+const FALL_SPIN_DAMPING = 0.3 // while toppling: fall fast instead of sliding half the table at a slant
 const LAID_COS = 0.2 // a toppled piece stops spinning once it leans past ~78°, so it never cartwheels back up
 
 let ready: Promise<void> | null = null
@@ -140,6 +141,7 @@ export class Table {
     b.setTranslation({ x, y: 0, z }, true)
     b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
     Table.still(b)
+    b.setAngularDamping(PIECE_SPIN_DAMPING)
     this.falling.delete(id)
     this.calm = 0
   }
@@ -183,6 +185,7 @@ export class Table {
       if (this.upY(id) > LAID_COS) continue
       const b = this.body(id), w = b.angvel()
       b.setAngvel({ x: 0, y: w.y, z: 0 }, true)
+      b.setAngularDamping(PIECE_SPIN_DAMPING)
       this.falling.delete(id)
     }
     const goalAgainst = this.goalReported ? null : this.ballInGoal()
@@ -235,6 +238,7 @@ export class Table {
   private topple(id: string, nx: number, nz: number) {
     this.falling.add(id)
     const b = this.body(id), cur = b.angvel()
+    b.setAngularDamping(FALL_SPIN_DAMPING)
     b.setAngvel({ x: nz * TIP_SPIN, y: cur.y, z: -nx * TIP_SPIN }, true)
   }
 
