@@ -147,7 +147,8 @@ function wrap(g: VoxelGrid, cx: number, rows: number[], z0: number, z1: number, 
 function drawRhino(): PartGrid {
   const g = new PartGrid(27, 32, 24)
   const cx = 13, cz = 9
-  suit(g, cx, cz, 'heavy', 'rhino')
+  const neck = suit(g, cx, cz, 'heavy', 'rhino')
+  g.begin(HEAD, [cx, neck, cz])
   for (const s of [-1, 1]) {
     blob(g, cx + s * 5.2, 25.6, cz - 1.5, 1.3, 1.7, 1, C('rhino'), 2) // small round ears
     g.set(Math.round(cx + s * 5.2), 26, cz - 1, C('rhinoDark'))
@@ -162,6 +163,7 @@ function drawRhino(): PartGrid {
   wrap(g, cx, [23], cz - 1, cz + 4, C('team'))
   for (let i = 0; i <= 9; i++) disk(g, cx, 21 + i, Math.round(cz + 8.5 + Math.sqrt(i) * 0.9), 2.7 * (1 - i / 10.5), C(i >= 8 ? 'ledRed' : 'chrome'))
   for (let i = 0; i <= 3; i++) disk(g, cx, 23 + i, cz + 4.5, 1.6 * (1 - i / 4.5), C('chromeDark'))
+  g.part = BODY
   for (const s of [-1, 1]) for (let y = 15; y <= 20; y++) g.set(cx + s * 2, y, cz - 5 - (y < 18 ? 0 : 1), C('black')) // cables
   return g
 }
@@ -170,7 +172,8 @@ function drawRhino(): PartGrid {
 function drawBear(): PartGrid {
   const g = new PartGrid(27, 32, 22)
   const cx = 13, cz = 9
-  suit(g, cx, cz, 'heavy', 'bear')
+  const neck = suit(g, cx, cz, 'heavy', 'bear')
+  g.begin(HEAD, [cx, neck, cz])
   blob(g, cx, 20.6, cz, 6.2, 5.4, 5.6, C('bear'), 2.4)
   for (const s of [-1, 1]) {
     blob(g, cx + s * 5, 25.4, cz - 0.5, 2, 2, 1.3, C('bear'), 2)
@@ -183,7 +186,8 @@ function drawBear(): PartGrid {
   front(g, cx + 2, cx + 4, 21, 23, C('chrome'), cz + 5) // monocle rim
   front(g, cx + 3, cx + 3, 22, 22, C('ledRed'), cz + 5)
   for (let z = cz - 4; z <= cz + 3; z += 2) for (let h = 0; h <= 2; h++) g.set(cx, 25 + h, z, C(h === 2 ? 'team' : 'teamDim')) // mohawk spikes
-  for (const s of [-1, 1]) for (let y = 15; y <= 19; y++) g.set(cx + s * 3, y, cz - 5, C('black'))
+  g.part = BODY
+  for (const s of [-1, 1]) for (let y = 15; y <= 19; y++) g.set(cx + s * 3, y, cz - 5, C('black')) // cables
   return g
 }
 
@@ -191,11 +195,12 @@ function drawBear(): PartGrid {
 function drawGorilla(): PartGrid {
   const g = new PartGrid(29, 32, 22)
   const cx = 14, cz = 9
-  suit(g, cx, cz, 'keeper', 'gorilla')
+  const neck = suit(g, cx, cz, 'keeper', 'gorilla')
   for (const s of [-1, 1]) {
     blob(g, cx + s * 9, 3.6, cz + 0.6, 3.1, 2.6, 3.2, C('chrome')) // keeper gloves
     front(g, cx + s * 9 - 2, cx + s * 9 + 2, 3, 4, C('team'))
   }
+  g.begin(HEAD, [cx, neck, cz])
   blob(g, cx, 21, cz - 0.5, 5.6, 5.2, 5.2, C('gorilla'), 2.4)
   blob(g, cx, 19.4, cz + 4, 4.4, 3.6, 2.8, C('gorillaFace'), 2.4) // face
   blob(g, cx, 17.8, cz + 5.4, 3.4, 2, 1.8, C('gorillaFace'), 2.4) // muzzle
@@ -247,7 +252,8 @@ function drawFox(): PartGrid {
 function drawCat(): PartGrid {
   const g = new PartGrid(19, 26, 20)
   const cx = 9, cz = 8
-  suit(g, cx, cz, 'light', 'cat')
+  const neck = suit(g, cx, cz, 'light', 'cat')
+  g.begin(HEAD, [cx, neck, cz])
   blob(g, cx, 16.4, cz, 4.6, 3.9, 4.2, C('cat'), 2.2)
   for (const y of [18, 19]) front(g, cx - 3, cx + 3, y, y, C(y === 19 ? 'catStripe' : 'cat'), cz + 4)
   back(g, cx - 3, cx + 3, 15, 19, C('catStripe'))
@@ -261,6 +267,7 @@ function drawCat(): PartGrid {
     for (let i = 0; i <= 2; i++) g.set(cx + s * (3 + i), 14 + (i === 2 ? 1 : 0), cz + 4 - Math.floor(i / 2), C('cream')) // whiskers
   }
   for (let x = cx - 4; x <= cx + 4; x++) g.set(x, Math.round(20.6 - ((x - cx) / 4.4) ** 2 * 1.4), cz, C('teamDim')) // headband
+  g.begin(TAIL, [cx + 1.5, 3, cz - 4])
   for (let i = 0; i <= 9; i++) { // tail
     const c = i % 3 === 0 ? 'catStripe' : 'cat'
     blob(g, cx + 1.5, 3 + i, cz - 4 - Math.sin((i / 9) * Math.PI) * 2, 0.9, 0.7, 0.9, C(c as ColorName), 2)

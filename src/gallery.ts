@@ -39,7 +39,7 @@ const params = new URLSearchParams(location.search)
 const team = (params.get('t') ?? 'cyan') as Team
 // Front three-quarters, front, back three-quarters.
 // ?a=all: the five animals side by side, at three-quarters.
-// &poses: the one animal in each of its poses, nearly side-on so leans read.
+// &poses: the one animal in each of its poses, nearly side-on so leans read. With a=all, &pose=<index> poses all five.
 const POSES: [string, Partial<Pose>][] = [
   ['Repos', {}],
   ['Suit le ballon', { yaw: 0.9 }],
@@ -54,7 +54,7 @@ const ALL: Animal[] = ['gorilla', 'rhino', 'bear', 'fox', 'cat']
 const SPOTS: { who: Animal; x: number; z: number; a: number; s: number; pose?: Partial<Pose>; label?: string }[] = params.has('poses')
   ? POSES.map(([label, pose], i) => ({ who: animal, x: ((i % 4) - 1.5) * 1.6, z: i < 4 ? -1.5 : 1.3, a: -1.25, s: 0.8, pose, label }))
   : params.get('a') === 'all'
-    ? ALL.map((who, i) => ({ who, x: (i - 2) * 1.5, z: 0, a: -0.45, s: who === 'fox' || who === 'cat' ? 0.7 : 0.85 }))
+    ? ALL.map((who, i) => ({ who, x: (i - 2) * 1.5, z: 0, a: -0.45, s: who === 'fox' || who === 'cat' ? 0.7 : 0.85, pose: POSES[Number(params.get('pose') ?? 0)][1] }))
     : [
       { who: animal, x: -1.75, z: 0, a: -0.55, s: 1 },
       { who: animal, x: 0, z: 0, a: 0, s: 1 },
