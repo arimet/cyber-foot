@@ -16,10 +16,10 @@ export const MASS: Record<Role, number> = { heavy: 3, keeper: 2, light: 1 }
 export const BALL_RADIUS = 0.35
 export const BALL_MASS = 0.3
 
-export const MAX_IMPULSE = 12
+export const MAX_IMPULSE = 16
 export const LOB_ANGLE_DEG = 35
 
-export const SETTLE_SPEED = 0.05
+export const SETTLE_SPEED = 0.12
 export const SETTLE_STEPS = 30
 export const MAX_TURN_STEPS = 480 // 8 s at 60 Hz
 export const TIP_COS = 0.707 // tipped when leaning more than 45°

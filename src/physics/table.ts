@@ -13,18 +13,18 @@ const WALL = 0.5 // wall thickness
 const BASE_HALF = 0.12 // half height of the base's flat part
 const BASE_ROUND = 0.08 // rounded edge of the base
 const BASE_SHARE = 0.8 // share of a piece's mass in its base: low centre of mass
-const FRICTION = 0.3
+const FRICTION = 0.08
 const PIECE_BOUNCE = 0.4
 const BALL_BOUNCE = 0.6
 const WALL_BOUNCE = 0.5
-const PIECE_DAMPING = 0.3
-const PIECE_SPIN_DAMPING = 0.5
-const BALL_DAMPING = 0.5
+const PIECE_DAMPING = 0.45
+const PIECE_SPIN_DAMPING = 4 // a piece lying on its side would roll on its round base forever
+const BALL_DAMPING = 1.6
 const BALL_SPIN_DAMPING = 0.8
 // Knock: a head-on hit faster than KNOCK_SPEED spins the struck piece over, more so when the hitter is heavier.
 // The flat bases meet below the centre of mass, so plain contact physics never tips anything.
 const KNOCK_SPEED = 1.0
-const KNOCK_SPIN = 4
+const KNOCK_SPIN = 7
 
 let ready: Promise<void> | null = null
 
