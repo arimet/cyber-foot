@@ -33,6 +33,12 @@ describe('AI', () => {
     }
   })
 
+  it('the first dozen candidates already cover every shooter and a lob (slow devices stop early)', () => {
+    const first = candidates(table, magenta, 'magenta').slice(0, 12)
+    expect(new Set(first.map(s => s.pieceId)).size).toBe(3)
+    expect(first.some(s => s.mode === 'lob')).toBe(true)
+  })
+
   it('scoreOutcome rewards scoring and punishes own goals', () => {
     const ball = table.ballPose()
     expect(scoreOutcome(table, 'cyan', 'magenta', [], ball)).toBeGreaterThan(500)

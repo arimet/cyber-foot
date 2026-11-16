@@ -23,7 +23,9 @@ const attackX = (me: Team) => (me === 'cyan' ? TABLE_HALF_LENGTH : -TABLE_HALF_L
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const dir = (deg: number) => ({ dirX: Math.cos((deg * Math.PI) / 180), dirZ: Math.sin((deg * Math.PI) / 180) })
 
-// Most promising first: nearest piece, aiming at the "ghost" point that drives the ball goalward, then at the ball.
+// Most promising first, taking the shooters in turn so a slow device that stops early has still tried each of them
+// and a lob. Per shooter: a straight shot at the "ghost" point that drives the ball goalward, a lob there, then the
+// remaining powers and angle offsets, at the ghost point before the ball centre.
 export function candidates(table: Table, canShoot: (id: string) => boolean, me: Team): Shot[] {
   const ball = table.ballPose()
   const gx = attackX(me)
@@ -32,16 +34,21 @@ export function candidates(table: Table, canShoot: (id: string) => boolean, me: 
     .map(p => ({ id: p.id, pose: table.piecePose(p.id) }))
     .sort((a, b) => Math.hypot(a.pose.x - ball.x, a.pose.z - ball.z) - Math.hypot(b.pose.x - ball.x, b.pose.z - ball.z))
     .slice(0, SHOOTERS)
-  const out: Shot[] = []
-  for (const { id, pose } of shooters) {
+  const perShooter = shooters.map(({ id, pose }) => {
     const reach = BASE_RADIUS[roleOf(id)] + BALL_RADIUS
     const ghost = { x: ball.x - ((gx - ball.x) / gd) * reach, z: ball.z - (-ball.z / gd) * reach }
     const toward = (t: { x: number; z: number }) => (Math.atan2(t.z - pose.z, t.x - pose.x) * 180) / Math.PI
+    const ground = (t: { x: number; z: number }, off: number, power: number): Shot =>
+      ({ pieceId: id, ...dir(toward(t) + off), power, mode: 'ground' })
+    const list: Shot[] = [ground(ghost, 0, POWERS[0]), { pieceId: id, ...dir(toward(ghost)), power: LOB_POWERS[0], mode: 'lob' }]
     for (const target of [ghost, ball])
       for (const off of OFFSETS_DEG)
-        for (const power of POWERS) out.push({ pieceId: id, ...dir(toward(target) + off), power, mode: 'ground' })
-    for (const power of LOB_POWERS) out.push({ pieceId: id, ...dir(toward(ghost)), power, mode: 'lob' })
-  }
+        for (const power of POWERS) if (!(target === ghost && off === 0 && power === POWERS[0])) list.push(ground(target, off, power))
+    for (const power of LOB_POWERS.slice(1)) list.push({ pieceId: id, ...dir(toward(ghost)), power, mode: 'lob' })
+    return list
+  })
+  const out: Shot[] = []
+  for (let i = 0; perShooter.some(l => i < l.length); i++) for (const l of perShooter) if (i < l.length) out.push(l[i])
   return out
 }
 
