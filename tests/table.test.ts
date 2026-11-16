@@ -270,3 +270,16 @@ describe('clone', () => {
     expect(JSON.stringify(allPoses(t))).toBe(before)
   })
 })
+
+describe('contacts', () => {
+  it('contacts are reported with their strength', async () => {
+    const t = await Table.create()
+    t.placePiece('cyan-light1', -3, 0)
+    t.placeBall(-1.5, BALL_RADIUS, 0)
+    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    const all: { kind: string; strength: number }[] = []
+    for (let i = 0; i < 240; i++) all.push(...t.step().contacts)
+    expect(all.some(c => c.kind === 'ball' && c.strength > 1)).toBe(true)
+    expect(all.every(c => c.strength >= 0.5)).toBe(true)
+  })
+})

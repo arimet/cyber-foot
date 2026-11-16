@@ -1,4 +1,5 @@
 import './style.css'
+import { isMuted, setMuted, sfx, unlockAudio } from './audio/sfx'
 import { type Level, think } from './game/ai'
 import { aimFromDrag } from './game/aim'
 import { BASE_RADIUS, MAX_TURN_STEPS, PIECES } from './game/constants'
@@ -26,6 +27,7 @@ let goal: { against: Team; left: number } | null = null
 let origin: { x: number; z: number } | null = null
 let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
+let down = new Set<string>() // pieces lying down, to hear new falls
 // AI turn: thinking (a generator stepped once per frame), then showing its aim, then shooting.
 // Starting a new game or opening the menu drops both, so a stale AI never shoots into the next game.
 let aiThought: Generator<void, Shot> | null = null
@@ -39,6 +41,11 @@ const hud = createHud(document.getElementById('ui')!, {
   onReplay: () => newGame(opponent),
   onMenu: () => newGame(null),
   onStart: vs => newGame(vs),
+  onMute() {
+    setMuted(!isMuted())
+    unlockAudio()
+    refresh()
+  },
   onView() {
     close = !close
     scene.setClose(close)
@@ -47,7 +54,7 @@ const hud = createHud(document.getElementById('ui')!, {
 })
 const thinking = () => !!aiThought || !!aiAim
 const refresh = () =>
-  hud.update({ close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
+  hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_TEAM && !match.winner
 
@@ -66,6 +73,8 @@ function newGame(vs: 'human' | Level | null) {
 
 function shoot(shot: Shot) {
   table.shoot(shot)
+  sfx.shot(shot.power)
+  down = new Set(table.tippedIds())
   mode = 'ground'
   busy = true
   steps = 0
@@ -93,6 +102,8 @@ function aiFrame(now: number) {
     shoot(shot)
   }
 }
+
+addEventListener('pointerdown', unlockAudio, { once: true }) // browsers start audio only after a gesture
 
 bindInput(canvas, scene, {
   pick(p, under) {
@@ -133,6 +144,7 @@ function clearAim() {
 
 function endTurn(goalAgainst: Team | null) {
   const out = match.endTurn({ goalAgainst, tipped: table.tippedIds() })
+  if (out.winner) sfx.win()
   if (out.kickoff) table.reset()
   for (const id of out.standUp) table.standUp(id)
   busy = false
@@ -143,9 +155,17 @@ function endTurn(goalAgainst: Team | null) {
 function advance() {
   const r = table.step()
   steps++
+  for (const c of r.contacts) sfx[c.kind === 'piece' ? 'hit' : c.kind](c.strength)
+  for (const id of table.tippedIds()) if (!down.has(id)) {
+    down.add(id)
+    sfx.tip()
+  }
   if (goal) {
     if (--goal.left <= 0) endTurn(goal.against)
-  } else if (r.goalAgainst) goal = { against: r.goalAgainst, left: AFTER_GOAL_STEPS }
+  } else if (r.goalAgainst) {
+    goal = { against: r.goalAgainst, left: AFTER_GOAL_STEPS }
+    sfx.goal()
+  }
   else if (table.isSettled() || steps >= MAX_TURN_STEPS) endTurn(null)
 }
 

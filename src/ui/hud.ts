@@ -2,6 +2,7 @@ import type { Level } from '../game/ai'
 import type { ShotMode, Team } from '../game/types'
 
 export type HudState = {
+  muted: boolean
   close: boolean
   score: Record<Team, number>
   turn: Team
@@ -16,7 +17,7 @@ const NAME: Record<Team, string> = { cyan: 'Cyan', magenta: 'Magenta' }
 
 export function createHud(
   root: HTMLElement,
-  h: { onToggleMode(): void; onReplay(): void; onMenu(): void; onStart(vs: 'human' | Level): void; onView(): void },
+  h: { onToggleMode(): void; onReplay(): void; onMenu(): void; onStart(vs: 'human' | Level): void; onView(): void; onMute(): void },
 ) {
   root.innerHTML = `
     <div class="hud-top">
@@ -24,7 +25,7 @@ export function createHud(
       <div class="turn"></div>
     </div>
     <button class="mode" type="button"></button>
-    <button class="view" type="button">Vue large</button>
+    <div class="corner"><button class="mute" type="button"></button><button class="view" type="button">Vue large</button></div>
     <div class="end" hidden><p></p><div class="row"><button type="button" data-a="replay">Rejouer</button><button type="button" data-a="menu">Menu</button></div></div>
     <div class="menu" hidden>
       <h1>cyber-foot</h1>
@@ -43,6 +44,8 @@ export function createHud(
   mode.addEventListener('click', h.onToggleMode)
   const view = q<HTMLButtonElement>('.view')
   view.addEventListener('click', h.onView)
+  const mute = q<HTMLButtonElement>('.mute')
+  mute.addEventListener('click', h.onMute)
   q('[data-a="replay"]').addEventListener('click', h.onReplay)
   q('[data-a="menu"]').addEventListener('click', h.onMenu)
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-vs]'))
@@ -59,6 +62,8 @@ export function createHud(
       mode.disabled = s.busy || s.thinking || !!s.winner
       mode.hidden = s.menu
       view.hidden = s.menu
+      mute.textContent = s.muted ? '🔇' : '🔊'
+      mute.setAttribute('aria-label', s.muted ? 'Remettre le son' : 'Couper le son')
       view.textContent = s.close ? 'Vue large' : 'Vue rapprochée'
       menu.hidden = !s.menu
       end.hidden = !s.winner || s.menu

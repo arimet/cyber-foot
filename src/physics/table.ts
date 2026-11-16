@@ -6,6 +6,9 @@ import {
 } from '../game/constants'
 import type { PieceSpec, Shot, Team } from '../game/types'
 
+export type Contact = { kind: 'piece' | 'ball' | 'rail'; strength: number }
+const MIN_CONTACT = 0.5 // softer touches are not reported
+
 export type Pose = { x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number }
 
 // Feel knobs, tuned by playing.
@@ -45,6 +48,8 @@ export class Table {
   private lob: { id: string; dirX: number; dirZ: number } | null = null
   private readonly preStep = new Map<string, { x: number; z: number }>()
   private readonly falling = new Set<string>()
+  private floorCollider = -1
+  private ballPre = { x: 0, y: 0, z: 0 }
 
   static async create(): Promise<Table> {
     await (ready ??= RAPIER.init())
@@ -71,6 +76,7 @@ export class Table {
       this.ballCollider = src.ballCollider
       for (const [h, id] of src.colliderOwner) this.colliderOwner.set(h, id)
       for (const id of src.falling) this.falling.add(id)
+      this.floorCollider = src.floorCollider
       return
     }
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
@@ -87,16 +93,16 @@ export class Table {
     this.reset()
   }
 
-  private fixedBox(cx: number, cy: number, cz: number, hx: number, hy: number, hz: number) {
-    this.world.createCollider(
+  private fixedBox(cx: number, cy: number, cz: number, hx: number, hy: number, hz: number): number {
+    return this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(cx, cy, cz).setRestitution(WALL_BOUNCE).setFriction(FRICTION),
-    )
+    ).handle
   }
 
   private buildArena() {
     const L = TABLE_HALF_LENGTH, W = TABLE_HALF_WIDTH, G = GOAL_HALF_WIDTH, H = GLASS_HEIGHT
     const outerX = L + GOAL_DEPTH + WALL
-    this.fixedBox(0, -WALL / 2, 0, outerX, WALL / 2, W + WALL) // floor
+    this.floorCollider = this.fixedBox(0, -WALL / 2, 0, outerX, WALL / 2, W + WALL) // floor
     this.fixedBox(0, H + WALL / 2, 0, outerX, WALL / 2, W + WALL) // glass ceiling
     for (const s of [-1, 1]) {
       this.fixedBox(0, H / 2, s * (W + WALL / 2), L + WALL, H / 2, WALL / 2) // long sides
@@ -183,23 +189,46 @@ export class Table {
     this.lob = shot.mode === 'lob' ? { id: shot.pieceId, dirX: shot.dirX, dirZ: shot.dirZ } : null
   }
 
-  step(): { goalAgainst: Team | null } {
+  // One fixed step. Reports a goal once per turn, and the contacts that started, with their impact speed.
+  step(): { goalAgainst: Team | null; contacts: Contact[] } {
     for (const [id, b] of this.bodies) {
       const v = b.linvel()
       this.preStep.set(id, { x: v.x, z: v.z })
     }
+    const bv = this.ball.linvel()
+    this.ballPre = { x: bv.x, y: bv.y, z: bv.z }
     this.world.step(this.events)
     const knocked = new Set<string>()
+    const contacts: Contact[] = []
+    const report = (kind: Contact['kind'], strength: number) => { if (strength >= MIN_CONTACT) contacts.push({ kind, strength }) }
     this.events.drainCollisionEvents((h1, h2, started) => {
       if (!started) return
       const a = this.colliderOwner.get(h1), b = this.colliderOwner.get(h2)
-      if (a && b && a !== b) {
+      if (a && b) {
+        if (a === b) return
         const key = a < b ? `${a}|${b}` : `${b}|${a}`
-        if (!knocked.has(key)) { knocked.add(key); this.knock(a, b) }
+        if (!knocked.has(key)) {
+          knocked.add(key)
+          report('piece', this.knock(a, b))
+        }
         return
       }
-      const other = h1 === this.ballCollider ? h2 : h2 === this.ballCollider ? h1 : null
-      if (this.lob && other !== null && this.colliderOwner.get(other) === this.lob.id) this.liftBall()
+      const isBall = h1 === this.ballCollider || h2 === this.ballCollider
+      const other = h1 === this.ballCollider ? h2 : h1
+      const piece = a ?? b
+      const bp = this.ballPre
+      if (isBall && piece) {
+        const pv = this.preStep.get(piece)!
+        report('ball', Math.hypot(bp.x - pv.x, bp.y, bp.z - pv.z))
+        if (this.lob && piece === this.lob.id) this.liftBall()
+      } else if (isBall) {
+        // the floor makes the ball bounce, everything else is a rail
+        if (other === this.floorCollider) report('ball', Math.abs(bp.y))
+        else report('rail', Math.hypot(bp.x, bp.y, bp.z))
+      } else if (piece && h1 !== this.floorCollider && h2 !== this.floorCollider) {
+        const pv = this.preStep.get(piece)!
+        report('rail', Math.hypot(pv.x, pv.z))
+      }
     })
     this.calm = this.allQuiet() ? this.calm + 1 : 0
     for (const id of this.falling) {
@@ -211,7 +240,7 @@ export class Table {
     }
     const goalAgainst = this.goalReported ? null : this.ballInGoal()
     if (goalAgainst) this.goalReported = true
-    return { goalAgainst }
+    return { goalAgainst, contacts }
   }
 
   private allQuiet(): boolean {
@@ -241,18 +270,20 @@ export class Table {
     this.ball.setLinvel({ x: hx * speed * Math.cos(a), y: speed * Math.sin(a), z: hz * speed * Math.cos(a) }, true)
   }
 
-  private knock(a: string, b: string) {
+  // Returns the closing speed of the hit.
+  private knock(a: string, b: string): number {
     const pa = this.body(a).translation(), pb = this.body(b).translation()
     const dx = pb.x - pa.x, dz = pb.z - pa.z, d = Math.hypot(dx, dz)
-    if (d < 1e-6) return
+    if (d < 1e-6) return 0
     const nx = dx / d, nz = dz / d // from a to b
     const va = this.preStep.get(a)!, vb = this.preStep.get(b)!
     const closing = (va.x - vb.x) * nx + (va.z - vb.z) * nz
     const excess = closing - KNOCK_SPEED
-    if (excess <= 0) return
+    if (excess <= 0) return Math.max(0, closing)
     const ma = MASS[this.role(a)], mb = MASS[this.role(b)]
     if ((excess * ma) / mb >= KNOCK_SEVERITY) this.topple(b, nx, nz) // b falls away from a
     if ((excess * mb) / ma >= KNOCK_SEVERITY) this.topple(a, -nx, -nz) // a bounces back off b
+    return closing
   }
 
   // Spin that lays the piece's top down toward (nx, nz).

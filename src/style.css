@@ -31,4 +31,6 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .menu h1 { margin: 0 0 12px; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); text-shadow: 0 0 18px var(--cyan), 3px 0 0 var(--magenta); }
 .menu p { margin: 10px 0 0; text-transform: uppercase; letter-spacing: 0.1em; color: var(--magenta); text-shadow: 0 0 10px var(--magenta); }
 .menu [data-vs]:not([data-vs="human"]) { border-color: var(--magenta); box-shadow: 0 0 12px #ff3df255; }
-.view { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); padding: 8px 14px; font-size: 13px; }
+.corner { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; }
+.corner button { padding: 8px 14px; font-size: 13px; }
+.mute { min-width: 44px; }
