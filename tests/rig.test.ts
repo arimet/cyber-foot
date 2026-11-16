@@ -69,12 +69,15 @@ describe('figure motion', () => {
     expect(span('yaw')).toBeGreaterThan(0.3)
   })
 
-  it('a figure standing back up starts doubled over and ends upright', () => {
+  it('a figure standing back up starts crouched, takes its time, and ends upright', () => {
     const m = new FigureMotion(0)
     run(m, 0, 1)
     m.rise(1)
-    const poses = run(m, 1, 2)
-    expect(poses[0].leanZ).toBeGreaterThan(0.9)
+    const poses = run(m, 1, 2.5)
+    expect(poses[0].breath).toBeLessThan(0.75) // crouched
+    expect(poses[0].leanZ).toBeGreaterThan(0.4) // bent over its knees
+    expect(poses[36].breath).toBeLessThan(0.95) // still getting up after 0.6 s
     expect(Math.abs(poses.at(-1)!.leanZ)).toBeLessThan(0.15)
+    expect(poses.at(-1)!.breath).toBeCloseTo(1, 1)
   })
 })

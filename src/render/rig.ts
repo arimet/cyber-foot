@@ -74,16 +74,23 @@ export type Drive = {
 
 const HEAD_EASE = 6 // per second
 const MOOD_TIME = 2.2
-const RISE_TIME = 1.3
+const RISE_TIME = 2
 
-// Back up after a fall: doubled over, pushes up past upright, a little hop, then shakes the daze off.
-function rising(k: number): { lean: number; hop: number; shake: number } {
-  const x = Math.min(1, k / 0.55) - 1
-  const lean = 1.25 * -(2.7 * x ** 3 + 1.7 * x ** 2) // 1.25 at the start, overshoots backward, settles at 0
-  const hop = k > 0.45 && k < 0.75 ? Math.sin((Math.PI * (k - 0.45)) / 0.3) * 0.15 : 0
-  const s = k - 0.55
-  const shake = s > 0 && s < 0.65 ? Math.sin(s * 28) * 0.5 * (1 - s / 0.65) : 0
-  return { lean, hop, shake }
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
+const smooth = (x: number) => x * x * (3 - 2 * x)
+const bump = (k: number, from: number, len: number) => Math.sin(Math.PI * clamp01((k - from) / len)) // 0 -> 1 -> 0
+
+// Back up after a fall: crouched over its knees, eyes on the floor, a beat to gather itself, then it straightens
+// up, stretches a little and shakes the daze off.
+function rising(k: number): { lean: number; squash: number; pitch: number; shake: number } {
+  const e = smooth(clamp01((k - 0.25) / 0.85))
+  const s = k - 1.15
+  return {
+    lean: 0.7 * (1 - e) - 0.06 * bump(k, 0.95, 0.45),
+    squash: 0.62 + 0.38 * e + 0.06 * bump(k, 0.9, 0.5),
+    pitch: 0.5 * (1 - e),
+    shake: s > 0 && s < 0.8 ? Math.sin(s * 16) * 0.4 * (1 - s / 0.8) : 0,
+  }
 }
 
 // One figure's motion. The sway runs in world axes; `toLocal` turns a world direction into the rig's axes.
@@ -137,10 +144,10 @@ export class FigureMotion {
     const e = 1 - Math.exp(-HEAD_EASE * d.dt)
     this.yaw += (yawT - this.yaw) * e
     this.pitch += (pitchT - this.pitch) * e
-    const r = d.t - this.riseAt < RISE_TIME ? rising(d.t - this.riseAt) : { lean: 0, hop: 0, shake: 0 }
+    const r = d.t - this.riseAt < RISE_TIME ? rising(d.t - this.riseAt) : { lean: 0, squash: 1, pitch: 0, shake: 0 }
     return {
-      leanX: lean.x, leanZ: lean.z + r.lean, hop: hop + r.hop, breath: 1 + Math.sin(t * 2.2) * 0.025,
-      yaw: this.yaw + r.shake, pitch: this.pitch, roll, wag, lift,
+      leanX: lean.x, leanZ: lean.z + r.lean, hop, breath: (1 + Math.sin(t * 2.2) * 0.025) * r.squash,
+      yaw: this.yaw + r.shake, pitch: this.pitch + r.pitch, roll, wag, lift,
     }
   }
 }

@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 import { arrowLength } from '../game/aim'
 import {
-  BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, RAIL_HEIGHT, TABLE_HALF_LENGTH,
+  BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, RAIL_HEIGHT, TABLE_HALF_LENGTH,
   TABLE_HALF_WIDTH,
 } from '../game/constants'
 import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
 import { type Animal, type Rig, createAnimal } from './animals'
+import { createBall } from './ball'
 import { framedFocus } from './framing'
 import { FigureMotion, type Mood, applyPose } from './rig'
 import { createRoom } from './room'
@@ -29,6 +30,7 @@ const neon = (color: number, intensity = 1.6) =>
 type PieceView = {
   group: THREE.Group; ring: THREE.MeshStandardMaterial; team: Team
   rig: Rig; motion: FigureMotion; vel: { x: number; z: number }; seen: { x: number; z: number }
+  down: boolean // lying on the table: when it is next seen upright, it was stood back up
 }
 const COIL = 0.4 // lean back (rad) at full pull
 
@@ -74,10 +76,7 @@ export class GameScene {
     this.scene.add(this.room.group)
     this.buildTable()
     for (const p of pieces) this.views.set(p.id, this.buildPiece(p))
-    this.ball = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_RADIUS, 24, 16),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x334455, roughness: 0.4 }),
-    )
+    this.ball = createBall()
     this.scene.add(this.ball)
 
     this.shaft = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.14).translate(0.5, 0, 0).rotateX(-Math.PI / 2), this.arrowMat)
@@ -161,7 +160,7 @@ export class GameScene {
     group.userData.id = p.id
     this.scene.add(group)
     const phase = [...p.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 7 // so they don't breathe in step
-    return { group, ring, team: p.team, rig, motion: new FigureMotion(phase), vel: { x: 0, z: 0 }, seen: { x: 0, z: 0 } }
+    return { group, ring, team: p.team, rig, motion: new FigureMotion(phase), vel: { x: 0, z: 0 }, seen: { x: 0, z: 0 }, down: false }
   }
 
   private resize() {
@@ -194,6 +193,12 @@ export class GameScene {
       v.group.position.set(p.x, p.y, p.z)
       v.group.quaternion.set(p.qx, p.qy, p.qz, p.qw)
       v.vel = { x: p.vx, z: p.vz }
+      const up = 1 - 2 * (p.qx * p.qx + p.qz * p.qz) // cosine of the tilt
+      if (up < 0.7) v.down = true
+      else if (v.down && up > 0.95) { // stood up by the rules (after a stunned turn, or for a kickoff)
+        v.down = false
+        v.motion.rise(Math.max(0, this.lastT))
+      }
       v.ring.emissiveIntensity = id === this.selected ? 1.6 : 0.8
     }
     const b = table.ballPose()
@@ -264,7 +269,6 @@ export class GameScene {
 
   // Pieces lying stunned, and the team that just scored (the other one sulks).
   setStunned(ids: ReadonlySet<string>): void {
-    for (const id of this.stunned) if (!ids.has(id)) this.views.get(id)?.motion.rise(Math.max(0, this.lastT)) // stood back up
     this.stunned = new Set(ids)
   }
 
