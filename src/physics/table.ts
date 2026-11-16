@@ -21,10 +21,13 @@ const PIECE_DAMPING = 0.45
 const PIECE_SPIN_DAMPING = 4 // a piece lying on its side would roll on its round base forever
 const BALL_DAMPING = 1.6
 const BALL_SPIN_DAMPING = 0.8
-// Knock: a head-on hit faster than KNOCK_SPEED spins the struck piece over, more so when the hitter is heavier.
-// The flat bases meet below the centre of mass, so plain contact physics never tips anything.
+// Knock: the flat bases meet below the centre of mass, so plain contact rarely tips anything. A head-on hit is scored
+// as (closing speed - KNOCK_SPEED) x (other mass / own mass); at KNOCK_SEVERITY or more the piece is given a fixed
+// spin that lays it down. Fixed, so a harder hit never tips less (an added spin made pieces cartwheel at random).
 const KNOCK_SPEED = 1.0
-const KNOCK_SPIN = 7
+const KNOCK_SEVERITY = 5
+const TIP_SPIN = 24
+const LAID_COS = 0.2 // a toppled piece stops spinning once it leans past ~78°, so it never cartwheels back up
 
 let ready: Promise<void> | null = null
 
@@ -40,6 +43,7 @@ export class Table {
   private goalReported = false
   private lob: { id: string; dirX: number; dirZ: number } | null = null
   private readonly preStep = new Map<string, { x: number; z: number }>()
+  private readonly falling = new Set<string>()
 
   static async create(): Promise<Table> {
     await (ready ??= RAPIER.init())
@@ -136,6 +140,7 @@ export class Table {
     b.setTranslation({ x, y: 0, z }, true)
     b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
     Table.still(b)
+    this.falling.delete(id)
     this.calm = 0
   }
 
@@ -174,6 +179,12 @@ export class Table {
       if (this.lob && other !== null && this.colliderOwner.get(other) === this.lob.id) this.liftBall()
     })
     this.calm = this.allQuiet() ? this.calm + 1 : 0
+    for (const id of this.falling) {
+      if (this.upY(id) > LAID_COS) continue
+      const b = this.body(id), w = b.angvel()
+      b.setAngvel({ x: 0, y: w.y, z: 0 }, true)
+      this.falling.delete(id)
+    }
     const goalAgainst = this.goalReported ? null : this.ballInGoal()
     if (goalAgainst) this.goalReported = true
     return { goalAgainst }
@@ -216,23 +227,29 @@ export class Table {
     const excess = closing - KNOCK_SPEED
     if (excess <= 0) return
     const ma = MASS[this.role(a)], mb = MASS[this.role(b)]
-    this.spin(b, nx, nz, (excess * KNOCK_SPIN * ma) / mb) // b falls away from a
-    this.spin(a, -nx, -nz, (excess * KNOCK_SPIN * mb) / ma) // a falls back away from b
+    if ((excess * ma) / mb >= KNOCK_SEVERITY) this.topple(b, nx, nz) // b falls away from a
+    if ((excess * mb) / ma >= KNOCK_SEVERITY) this.topple(a, -nx, -nz) // a bounces back off b
   }
 
-  // Add spin that tips the piece's top toward (nx, nz).
-  private spin(id: string, nx: number, nz: number, w: number) {
+  // Spin that lays the piece's top down toward (nx, nz).
+  private topple(id: string, nx: number, nz: number) {
+    this.falling.add(id)
     const b = this.body(id), cur = b.angvel()
-    b.setAngvel({ x: cur.x + nz * w, y: cur.y, z: cur.z - nx * w }, true)
+    b.setAngvel({ x: nz * TIP_SPIN, y: cur.y, z: -nx * TIP_SPIN }, true)
   }
 
   private role(id: string) {
     return this.pieces.find(p => p.id === id)!.role
   }
 
-  isTipped(id: string): boolean {
+  // y of the piece's local up axis
+  private upY(id: string): number {
     const q = this.body(id).rotation()
-    return 1 - 2 * (q.x * q.x + q.z * q.z) < TIP_COS // y of the piece's local up axis
+    return 1 - 2 * (q.x * q.x + q.z * q.z)
+  }
+
+  isTipped(id: string): boolean {
+    return this.upY(id) < TIP_COS
   }
 
   tippedIds(): string[] {

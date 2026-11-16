@@ -155,6 +155,45 @@ describe('lob and tipping', () => {
     expect(table.piecePose('magenta-light1').x).toBeGreaterThan(0.01) // it was hit
   })
 
+  // Parks every piece out of the way, then plays shooter into target along z=0.
+  // A fresh table each time: reset() keeps Rapier's contact caches, which makes back-to-back runs drift.
+  const duel = async (shooter: string, target: string, power: number) => {
+    table = await Table.create()
+    PIECES.forEach((p, i) => table.placePiece(p.id, -8 + (i % 5) * 4, i < 5 ? -5.6 : 5.6))
+    table.placeBall(9, BALL_RADIUS, 4.5)
+    table.placePiece(target, 0, 0)
+    table.placePiece(shooter, -3, 0)
+    table.shoot({ pieceId: shooter, dirX: 1, dirZ: 0, power, mode: 'ground' })
+    table.runTurn()
+    return table.isTipped(target)
+  }
+
+  it.each([
+    ['cyan-light1', 'magenta-light1', true],
+    ['cyan-light1', 'magenta-heavy1', false], // heavies are hard to dislodge: tipping one is allowed, not required
+    ['cyan-heavy1', 'magenta-light1', true],
+  ] as const)('a harder hit of %s on %s never tips less', async (shooter, target, mustTip) => {
+    const tips: boolean[] = []
+    for (const p of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]) tips.push(await duel(shooter, target, p))
+    const first = tips.indexOf(true)
+    if (mustTip) expect(first, `tips by power: ${tips}`).toBeGreaterThan(-1)
+    if (first >= 0) expect(tips.slice(first).every(Boolean), `tips by power: ${tips}`).toBe(true)
+  })
+
+  it('a light tap between two lights tips nobody', async () => {
+    expect(await duel('cyan-light1', 'magenta-light1', 0.3)).toBe(false)
+    expect(table.isTipped('cyan-light1')).toBe(false)
+  })
+
+  it.each([0.8, 0.9, 1])('a light shot into a side rail at power %s does not tip itself', power => {
+    table.reset()
+    PIECES.forEach((p, i) => table.placePiece(p.id, -8 + (i % 5) * 4, i < 5 ? -5.6 : 5.6))
+    table.placePiece('cyan-light1', 0, 0)
+    table.shoot({ pieceId: 'cyan-light1', dirX: 0.3, dirZ: 0.95, power, mode: 'ground' })
+    table.runTurn()
+    expect(table.isTipped('cyan-light1')).toBe(false)
+  })
+
   it('tilt past 45° counts as tipped, below does not', () => {
     table.tilt('cyan-light1', 0.9)
     expect(table.isTipped('cyan-light1')).toBe(true)
