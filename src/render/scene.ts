@@ -125,6 +125,7 @@ export class GameScene {
     const visor = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, h * 0.12, w * 0.84), neon(TEAM_COLOR[p.team], 2))
     visor.position.y = BASE_H + h * 0.8
     group.add(base, ringMesh, body, visor)
+    group.userData.id = p.id
     this.scene.add(group)
     return { group, ring }
   }
@@ -154,12 +155,28 @@ export class GameScene {
     this.ball.quaternion.set(b.qx, b.qy, b.qz, b.qw)
   }
 
-  tableHit(clientX: number, clientY: number): { x: number; z: number } | null {
+  private aimRay(clientX: number, clientY: number) {
     const r = this.canvas.getBoundingClientRect()
     this.camera.updateMatrixWorld() // the camera may not have been rendered since the last resize
     this.ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), this.camera)
+  }
+
+  tableHit(clientX: number, clientY: number): { x: number; z: number } | null {
+    this.aimRay(clientX, clientY)
     const hit = this.ray.ray.intersectPlane(this.ground, new THREE.Vector3())
     return hit ? { x: hit.x, z: hit.z } : null
+  }
+
+  // Pieces under the pointer, nearest first: players click the figure, not the spot on the floor under it.
+  piecesAt(clientX: number, clientY: number): string[] {
+    this.aimRay(clientX, clientY)
+    const ids: string[] = []
+    for (const hit of this.ray.intersectObjects([...this.views.values()].map(v => v.group), true)) {
+      let o: THREE.Object3D | null = hit.object
+      while (o && !o.userData.id) o = o.parent
+      if (o && !ids.includes(o.userData.id)) ids.push(o.userData.id)
+    }
+    return ids
   }
 
   setSelected(id: string | null): void {

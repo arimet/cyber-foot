@@ -37,9 +37,10 @@ const refresh = () => hud.update({ score: match.score, turn: match.turn, mode, w
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 
 bindInput(canvas, scene, {
-  pick(p) {
+  pick(p, under) {
     if (busy) return null
-    let best: string | null = null, bestD = Infinity
+    // The figure under the pointer first; else the nearest base around the floor point.
+    let best: string | null = under.find(id => match.canShoot(id)) ?? null, bestD = best ? -1 : Infinity
     for (const { id, role } of PIECES) {
       if (!match.canShoot(id)) continue
       const pose = table.piecePose(id)

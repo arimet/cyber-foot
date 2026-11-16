@@ -2,7 +2,7 @@ import type { GameScene } from './render/scene'
 
 type P = { x: number; z: number }
 export type InputHandlers = {
-  pick(p: P): string | null
+  pick(p: P, under: string[]): string | null
   aim(id: string, p: P): void
   release(id: string, p: P): void
   cancel(): void
@@ -16,7 +16,7 @@ export function bindInput(canvas: HTMLCanvasElement, scene: GameScene, h: InputH
   canvas.addEventListener('pointerdown', e => {
     if (active) return
     const p = at(e)
-    const id = p && h.pick(p)
+    const id = p && h.pick(p, scene.piecesAt(e.clientX, e.clientY))
     if (!id) return
     active = { id, pointer: e.pointerId }
     canvas.setPointerCapture(e.pointerId)
