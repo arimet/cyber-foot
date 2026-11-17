@@ -58,6 +58,7 @@ export class Table {
   private readonly preStep = new Map<string, { x: number; z: number }>()
   private readonly falling = new Set<string>()
   private floorCollider = -1
+  private benched: ReadonlySet<string> = new Set() // off the pitch: no body in play
   private ballPre = { x: 0, y: 0, z: 0 }
 
   static async create(): Promise<Table> {
@@ -184,6 +185,16 @@ export class Table {
     this.placeBall(0, BALL_RADIUS, 0)
     this.goalReported = false
     this.lob = null
+  }
+
+  // Takes the listed pieces off the pitch (back on their kickoff spot, body disabled) and brings every other one back.
+  setBenched(ids: ReadonlySet<string>): void {
+    this.benched = new Set(ids)
+    for (const p of this.pieces) {
+      const b = this.body(p.id)
+      if (ids.has(p.id)) this.placePiece(p.id, KICKOFF[p.id].x, KICKOFF[p.id].z)
+      b.setEnabled(!ids.has(p.id))
+    }
   }
 
   placePiece(id: string, x: number, z: number): void {
@@ -352,7 +363,7 @@ export class Table {
   }
 
   tippedIds(): string[] {
-    return this.pieces.filter(p => this.isTipped(p.id)).map(p => p.id)
+    return this.pieces.filter(p => !this.benched.has(p.id) && this.isTipped(p.id)).map(p => p.id)
   }
 
   tilt(id: string, angleRad: number): void {
@@ -361,7 +372,7 @@ export class Table {
 
   // What stands or lies on the floor: each piece as a segment from its base to its head (a point when it stands).
   private blockers(except?: string): Blocker[] {
-    return this.pieces.filter(p => p.id !== except).map(p => {
+    return this.pieces.filter(p => p.id !== except && !this.benched.has(p.id)).map(p => {
       const b = this.body(p.id), t = b.translation(), q = b.rotation(), h = BODY_HEIGHT[p.role]
       const ux = 2 * (q.x * q.y - q.w * q.z), uz = 2 * (q.y * q.z + q.w * q.x) // local up axis, on the floor
       return { ax: t.x, az: t.z, bx: t.x + ux * h, bz: t.z + uz * h, r: BASE_RADIUS[p.role] }

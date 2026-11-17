@@ -334,4 +334,23 @@ describe('contacts', () => {
     expect(all.some(c => c.kind === 'ball' && c.strength > 1)).toBe(true)
     expect(all.every(c => c.strength >= 0.5)).toBe(true)
   })
+
+  it('a benched piece is off the pitch: the ball rolls through its spot', async () => {
+    const table = await Table.create()
+    const k = KICKOFF['magenta-light1']
+    table.setBenched(new Set(['magenta-light1']))
+    table.placeBall(k.x - 3, BALL_RADIUS, k.z, 10, 0, 0)
+    table.runTurn()
+    expect(table.ballPose().x).toBeGreaterThan(k.x + 1)
+  })
+
+  it('unbenching brings every piece back', async () => {
+    const table = await Table.create()
+    table.setBenched(new Set(['magenta-light1']))
+    table.setBenched(new Set())
+    const k = KICKOFF['magenta-light1']
+    table.placeBall(k.x - 3, BALL_RADIUS, k.z, 10, 0, 0)
+    table.runTurn()
+    expect(table.ballPose().x).toBeLessThan(k.x)
+  })
 })
