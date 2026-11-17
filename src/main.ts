@@ -14,7 +14,7 @@ import { getLang } from './ui/i18n'
 document.documentElement.lang = getLang()
 
 const STEP = 1 / 60
-const AFTER_GOAL_STEPS = 45 // let the ball hit the net before the kickoff reset
+const AFTER_GOAL_STEPS = 150 // 2.5 s of celebration before the kickoff reset
 const PICK_SLACK = 0.25 // fingers are wider than the base
 const AI_TEAM: Team = 'magenta'
 const AI_AIM_MS = 700 // the AI shows its aim before shooting
@@ -175,6 +175,7 @@ function advance() {
   } else if (r.goalAgainst) {
     goal = { against: r.goalAgainst, left: AFTER_GOAL_STEPS }
     scene.cheer(other(r.goalAgainst))
+    hud.goal(other(r.goalAgainst))
     sfx.goal()
   }
   else if (table.isSettled() || steps >= MAX_TURN_STEPS) endTurn(null)

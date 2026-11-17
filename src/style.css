@@ -29,6 +29,31 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .shot button[data-m="lob"][aria-pressed="true"] { border-color: var(--magenta); background: #1f0b20; box-shadow: 0 0 12px #ff3df255; }
 .shot button:disabled { opacity: 0.3; }
 .shot svg { width: 26px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.goal-flash { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
+.goal-flash::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; background: currentColor; box-shadow: 0 0 24px currentColor, 0 0 60px currentColor; transform: scaleX(0); }
+.goal-flash b { position: relative; font-size: clamp(64px, 15vw, 190px); font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em; color: #fff; opacity: 0; }
+.goal-flash.cyan { color: var(--cyan); }
+.goal-flash.magenta { color: var(--magenta); }
+.goal-flash.go b { animation: goal-in 2.3s cubic-bezier(.2, .9, .3, 1) forwards; }
+.goal-flash.go::before { animation: goal-slash 2.3s ease-out forwards; }
+/* slams in, splits into cyan and magenta for a beat like a bad signal, holds, then lifts away */
+@keyframes goal-in {
+  0% { opacity: 0; transform: scale(2.8); filter: blur(14px); text-shadow: 0 0 0 transparent; }
+  10% { opacity: 1; transform: scale(1); filter: blur(0); text-shadow: 0 0 22px currentColor, 0 0 60px currentColor; }
+  14% { transform: translateX(-10px) skewX(-12deg); text-shadow: -8px 0 var(--cyan), 8px 0 var(--magenta), 0 0 40px currentColor; }
+  18% { transform: translateX(8px) skewX(8deg); text-shadow: 8px 0 var(--cyan), -8px 0 var(--magenta), 0 0 40px currentColor; }
+  22%, 78% { opacity: 1; transform: none; text-shadow: 0 0 22px currentColor, 0 0 60px currentColor; }
+  100% { opacity: 0; transform: translateY(-30px) scale(1.08); filter: blur(6px); text-shadow: 0 0 22px currentColor; }
+}
+@keyframes goal-slash {
+  0% { transform: scaleX(0); opacity: 1; }
+  12% { transform: scaleX(1); opacity: 1; }
+  60% { transform: scaleX(1); opacity: 0.6; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes goal-in { 0%, 100% { opacity: 0; } 15%, 80% { opacity: 1; text-shadow: 0 0 22px currentColor; } }
+}
 .end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #05050cc0; pointer-events: auto; }
 .end p { margin: 0; font-size: 44px; text-transform: uppercase; }
 .end.cyan p { color: var(--cyan); text-shadow: 0 0 18px var(--cyan); }

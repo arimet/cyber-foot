@@ -32,6 +32,7 @@ export function createHud(
       <button type="button" data-m="lob"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 14Q14-6 26 13M20 11l6 2 0-6"/></svg><span></span></button>
     </div>
     <div class="corner"><button class="lang" type="button"></button><button class="mute" type="button"></button><button class="view" type="button"></button></div>
+    <div class="goal-flash" hidden aria-live="polite"><b></b></div>
     <div class="end" hidden><p></p><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
     <div class="menu" hidden>
       <h1>cyber-foot</h1>
@@ -96,5 +97,15 @@ export function createHud(
       end.className = `end ${s.winner}`
     }
   }
-  return { update }
+  // The goal banner: restarts its animation each time, hides itself when done.
+  const flash = q<HTMLDivElement>('.goal-flash')
+  flash.addEventListener('animationend', e => { if (e.target === flash) flash.hidden = true })
+  function goal(team: Team) {
+    flash.querySelector('b')!.textContent = t().goal
+    flash.className = `goal-flash ${team}`
+    flash.hidden = false
+    void flash.offsetWidth // restart the animation
+    flash.classList.add('go')
+  }
+  return { update, goal }
 }

@@ -11,6 +11,7 @@ import { type Animal, type Rig, createAnimal } from './animals'
 import { createBall } from './ball'
 import { framedFocus } from './framing'
 import { createGoal } from './goal'
+import { createConfetti } from './confetti'
 import { FigureMotion, type Mood, TILT_TIME, applyPose, tiltUp } from './rig'
 import { TOP_HALF_LENGTH, TOP_HALF_WIDTH, createPitch } from './pitch'
 import { HAZE, createRoom } from './room'
@@ -26,6 +27,8 @@ const ANIMAL: Record<string, Animal> = { keeper: 'gorilla', heavy1: 'rhino', hea
 const FIGURE_OVERHANG = 0.25 // the figure may stand a little taller than its physics body
 const CLOSE_ZOOM = 1.7
 const CAMERA_EASE = 0.06 // share of the remaining way covered each frame
+const FLASH_TIME = 2 // s the rails pulse after a goal
+const SHAKE = 0.35, SHAKE_TIME = 0.5
 
 const neon = (color: number, intensity = 1.6) =>
   new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity })
@@ -61,6 +64,9 @@ export class GameScene {
   private aim: { x: number; z: number; power: number } | null = null
   private stunned: ReadonlySet<string> = new Set()
   private mood: { scorer: Team; since: number } | null = null
+  private readonly confetti = createConfetti()
+  private readonly railNeon = neon(LINE, 0.7)
+  private flash: { color: number; since: number } | null = null // rails pulse in the scorer's colour
   private lastT = -1
 
   constructor(private readonly canvas: HTMLCanvasElement, pieces: readonly PieceSpec[]) {
@@ -83,7 +89,7 @@ export class GameScene {
     this.buildTable()
     for (const p of pieces) this.views.set(p.id, this.buildPiece(p))
     this.ball = createBall()
-    this.scene.add(this.ball)
+    this.scene.add(this.ball, this.confetti.mesh)
 
     this.shaft = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.14).translate(0.5, 0, 0).rotateX(-Math.PI / 2), this.arrowMat)
     const tri = new THREE.Shape([new THREE.Vector2(0, -0.28), new THREE.Vector2(0.4, 0), new THREE.Vector2(0, 0.28)])
@@ -124,7 +130,7 @@ export class GameScene {
     swept(rampProfile(R, 12), rail)
     swept([[0, R], [-T, R]], rail) // top
     swept([[-T, R], [-T, 0]], rail) // outer face
-    swept([[0.03, R + 0.004], [-0.05, R + 0.004]], neon(LINE, 0.7))
+    swept([[0.03, R + 0.004], [-0.05, R + 0.004]], this.railNeon)
     // end caps by the goal posts: the rail's cross-section, both ways round so it shows from either side
     const outline: [number, number][] = [...rampProfile(R, 12), [-T, R]], cap: number[] = []
     for (const path of RAIL_PATHS) {
@@ -191,7 +197,10 @@ export class GameScene {
 
   private placeCamera() {
     const d = (this.fitDist / this.zoom) * Math.SQRT1_2
-    this.camera.position.set(this.focus.x, d, this.focus.z + d)
+    // a goal shakes the camera, hard at first and dying away in half a second
+    const since = this.flash ? this.lastT - this.flash.since : Infinity, k = Math.max(0, 1 - since / SHAKE_TIME)
+    const sx = Math.sin(this.lastT * 71) * SHAKE * k * k, sy = Math.sin(this.lastT * 53 + 1) * SHAKE * k * k
+    this.camera.position.set(this.focus.x + sx, d + sy, this.focus.z + d)
     this.camera.lookAt(this.focus.x, 0, this.focus.z + 0.6)
   }
 
@@ -303,8 +312,12 @@ export class GameScene {
     this.stunned = new Set(ids)
   }
 
+  // A goal: the scorers cheer, the others sulk, confetti bursts out of the net and the rails pulse.
   cheer(scorer: Team): void {
     this.mood = { scorer, since: this.lastT }
+    this.flash = { color: TEAM_COLOR[scorer], since: this.lastT }
+    const sx = scorer === 'cyan' ? 1 : -1 // cyan scores in magenta's goal, at +x
+    this.confetti.burst(sx * TABLE_HALF_LENGTH, 1, 0, -sx, 0, [TEAM_COLOR[scorer], 0xffffff, TEAM_COLOR[scorer], 0xffd23f], 180)
   }
 
   setAim(origin: { x: number; z: number } | null, dirX: number, dirZ: number, power: number, role: Role): void {
@@ -324,6 +337,15 @@ export class GameScene {
     this.lastT = t
     if (dt > 0) this.animate(t, dt)
     this.room.update(t, dt)
+    this.confetti.update(dt)
+    const f = this.flash, k = f ? (t - f.since) / FLASH_TIME : 1
+    if (f && k < 1) {
+      this.railNeon.emissive.setHex(f.color)
+      this.railNeon.emissiveIntensity = 0.7 + 2.6 * (1 - k) * (0.5 + 0.5 * Math.cos(k * Math.PI * 8))
+    } else {
+      this.railNeon.emissive.setHex(LINE)
+      this.railNeon.emissiveIntensity = 0.7
+    }
     this.composer.render()
   }
 }
