@@ -11,7 +11,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night)
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; }
 
-.hud-top { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; letter-spacing: 0.08em; }
+/* Score at top left, on a dark plate so it reads over the city; the corner buttons keep the top right. */
+.hud-top { position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); padding: 8px 16px 9px; letter-spacing: 0.08em; white-space: nowrap; background: #05050cc4; border: 1px solid #ffffff1f; border-radius: 10px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .score { font-size: 22px; }
 .score b { font-size: 30px; color: #fff; text-shadow: 0 0 10px #fff8; }
 .cyan { color: var(--cyan); text-shadow: 0 0 10px var(--cyan); }
@@ -20,8 +21,14 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--night)
 button { touch-action: manipulation; font: inherit; color: var(--ink); background: #0b0f1c; border: 2px solid var(--cyan); border-radius: 8px; padding: 10px 22px; cursor: pointer; pointer-events: auto; box-shadow: 0 0 12px #2cf6ff55; letter-spacing: 0.1em; text-transform: uppercase; }
 button:disabled { opacity: 0.4; cursor: default; }
 button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.mode { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); min-width: 120px; }
-.mode.lob { border-color: var(--magenta); box-shadow: 0 0 12px #ff3df255; }
+/* Shot switch: both kinds of shot shown, the chosen one lit. */
+.shot { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; background: #05050cc4; border: 1px solid #ffffff1f; border-radius: 12px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.shot-label { padding: 0 6px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; }
+.shot button { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 14px; border-color: #ffffff2a; box-shadow: none; background: transparent; opacity: 0.65; }
+.shot button[aria-pressed="true"] { opacity: 1; border-color: var(--cyan); background: #0b1a24; box-shadow: 0 0 12px #2cf6ff55; }
+.shot button[data-m="lob"][aria-pressed="true"] { border-color: var(--magenta); background: #1f0b20; box-shadow: 0 0 12px #ff3df255; }
+.shot button:disabled { opacity: 0.3; }
+.shot svg { width: 26px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
 .end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #05050cc0; pointer-events: auto; }
 .end p { margin: 0; font-size: 44px; text-transform: uppercase; }
 .end.cyan p { color: var(--cyan); text-shadow: 0 0 18px var(--cyan); }
@@ -43,15 +50,25 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   .rotate p::before { content: '⟳'; display: block; font-size: 56px; margin-bottom: 12px; }
 }
 
+/* Not enough room for both at full size. */
+@media (max-width: 1100px) {
+  .score { font-size: 17px; }
+  .score b { font-size: 23px; }
+  .turn { font-size: 12px; }
+  .corner button { padding: 7px 11px; font-size: 12px; }
+}
+
 /* Phone in landscape: a compact HUD at the edges, nothing over the middle of the pitch. */
 @media (max-height: 500px) {
-  .hud-top { top: max(6px, env(safe-area-inset-top)); right: auto; text-align: left; padding-left: max(12px, env(safe-area-inset-left)); } /* clear of the corner buttons */
+  .hud-top { top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); padding: 4px 10px 5px; }
   .score { font-size: 15px; }
   .score b { font-size: 20px; }
   .turn { font-size: 11px; margin-top: 0; }
   .corner { top: max(6px, env(safe-area-inset-top)); gap: 6px; }
   .corner button { padding: 6px 10px; font-size: 11px; min-height: 44px; }
-  .mode { left: auto; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); transform: none; min-width: 88px; min-height: 44px; padding: 8px 14px; }
+  .shot { left: auto; right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); transform: none; padding: 4px; gap: 4px; }
+  .shot-label { display: none; }
+  .shot button { min-height: 44px; padding: 6px 10px; font-size: 12px; }
   .menu h1 { font-size: 28px; margin-bottom: 4px; }
   .menu { gap: 8px; }
   .end p { font-size: 30px; }

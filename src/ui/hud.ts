@@ -26,7 +26,11 @@ export function createHud(
       <div class="score"><span class="cyan">CYAN</span> <b data-s="cyan">0</b> — <b data-s="magenta">0</b> <span class="magenta">MAGENTA</span></div>
       <div class="turn"></div>
     </div>
-    <button class="mode" type="button"></button>
+    <div class="shot" role="group">
+      <span class="shot-label"></span>
+      <button type="button" data-m="ground"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 13H27M21 8l6 5-6 5"/></svg><span></span></button>
+      <button type="button" data-m="lob"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 14Q14-6 26 13M20 11l6 2 0-6"/></svg><span></span></button>
+    </div>
     <div class="corner"><button class="lang" type="button"></button><button class="mute" type="button"></button><button class="view" type="button"></button></div>
     <div class="end" hidden><p></p><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
     <div class="menu" hidden>
@@ -41,14 +45,15 @@ export function createHud(
     </div>
     <div class="rotate"><p data-t="rotate"></p></div>`
   const q = <T extends Element>(s: string) => root.querySelector<T>(s)!
-  const mode = q<HTMLButtonElement>('.mode')
+  const shot = q<HTMLDivElement>('.shot')
+  const modes = [...root.querySelectorAll<HTMLButtonElement>('[data-m]')]
   const view = q<HTMLButtonElement>('.view')
   const mute = q<HTMLButtonElement>('.mute')
   const lang = q<HTMLButtonElement>('.lang')
   const end = q<HTMLDivElement>('.end')
   const menu = q<HTMLDivElement>('.menu')
   let last: HudState | null = null
-  mode.addEventListener('click', h.onToggleMode)
+  for (const b of modes) b.addEventListener('click', () => { if (last && b.dataset.m !== last.mode) h.onToggleMode() })
   view.addEventListener('click', h.onView)
   mute.addEventListener('click', h.onMute)
   lang.addEventListener('click', () => {
@@ -68,10 +73,15 @@ export function createHud(
     const turn = q<HTMLDivElement>('.turn')
     turn.textContent = s.winner || s.menu ? '' : s.thinking ? d.thinking(NAME[s.turn]) : d.toPlay(NAME[s.turn])
     turn.className = `turn ${s.turn}`
-    mode.textContent = s.mode === 'lob' ? d.lob : d.ground
-    mode.classList.toggle('lob', s.mode === 'lob')
-    mode.disabled = s.busy || s.thinking || !!s.winner
-    mode.hidden = s.menu
+    // both shots on show, the chosen one lit: a switch, not a label to decode
+    q('.shot-label').textContent = d.shot
+    for (const b of modes) {
+      const m = b.dataset.m as ShotMode
+      b.querySelector('span')!.textContent = d[m]
+      b.setAttribute('aria-pressed', String(s.mode === m))
+      b.disabled = s.busy || s.thinking || !!s.winner
+    }
+    shot.hidden = s.menu
     view.hidden = s.menu
     view.textContent = s.close ? d.wideView : d.closeView
     mute.textContent = s.muted ? '🔇' : '🔊'
