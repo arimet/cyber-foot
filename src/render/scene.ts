@@ -12,7 +12,7 @@ import { createBall } from './ball'
 import { framedFocus } from './framing'
 import { createGoal } from './goal'
 import { createConfetti } from './confetti'
-import { FigureMotion, type Mood, TILT_TIME, applyPose, tiltUp } from './rig'
+import { FigureMotion, MOOD_TIME, type Mood, TILT_TIME, applyPose, tiltUp } from './rig'
 import { TOP_HALF_LENGTH, TOP_HALF_WIDTH, createPitch } from './pitch'
 import { HAZE, createRoom } from './room'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
@@ -29,6 +29,8 @@ const CLOSE_ZOOM = 1.7
 const CAMERA_EASE = 0.06 // share of the remaining way covered each frame
 const FLASH_TIME = 2 // s the rails pulse after a goal
 const SHAKE = 0.35, SHAKE_TIME = 0.5
+const ORBIT = 0.15 // rad/s the camera circles the table once a match is won
+const SHOWER_EVERY = 0.4 // s between handfuls of confetti over a won match
 
 const neon = (color: number, intensity = 1.6) =>
   new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity })
@@ -67,6 +69,8 @@ export class GameScene {
   private readonly confetti = createConfetti()
   private readonly railNeon = neon(LINE, 0.7)
   private flash: { color: number; since: number } | null = null // rails pulse in the scorer's colour
+  private party: { winner: Team; since: number; next: number } | null = null // the match is won
+  private yaw = 0 // camera turn around the table
   private lastT = -1
 
   constructor(private readonly canvas: HTMLCanvasElement, pieces: readonly PieceSpec[]) {
@@ -200,8 +204,9 @@ export class GameScene {
     // a goal shakes the camera, hard at first and dying away in half a second
     const since = this.flash ? this.lastT - this.flash.since : Infinity, k = Math.max(0, 1 - since / SHAKE_TIME)
     const sx = Math.sin(this.lastT * 71) * SHAKE * k * k, sy = Math.sin(this.lastT * 53 + 1) * SHAKE * k * k
-    this.camera.position.set(this.focus.x + sx, d + sy, this.focus.z + d)
-    this.camera.lookAt(this.focus.x, 0, this.focus.z + 0.6)
+    const ox = Math.sin(this.yaw), oz = Math.cos(this.yaw)
+    this.camera.position.set(this.focus.x + ox * d + sx, d + sy, this.focus.z + oz * d)
+    this.camera.lookAt(this.focus.x + ox * 0.6, 0, this.focus.z + oz * 0.6)
   }
 
   // Close view (follows the ball) or the whole table.
@@ -242,8 +247,8 @@ export class GameScene {
       v.ring.emissiveIntensity = id === this.selected ? 1.6 : 0.8
     }
     const b = table.ballPose()
-    this.zoom += (this.zoomTarget - this.zoom) * CAMERA_EASE
-    const f = framedFocus(b.x, b.z, this.zoom)
+    this.zoom += ((this.party ? 1 : this.zoomTarget) - this.zoom) * CAMERA_EASE // a won match: the whole table
+    const f = this.party ? { x: 0, z: 0 } : framedFocus(b.x, b.z, this.zoom)
     this.focus.x += (f.x - this.focus.x) * CAMERA_EASE
     this.focus.z += (f.z - this.focus.z) * CAMERA_EASE
     this.placeCamera()
@@ -271,10 +276,11 @@ export class GameScene {
       const look = aiming ? toLocal(this.aim!.x, this.aim!.z) : toLocal(ball.x - pos.x, ball.z - pos.z)
       const coil = aiming ? toLocal(-this.aim!.x * this.aim!.power * COIL, -this.aim!.z * this.aim!.power * COIL) : { x: 0, z: 0 }
       const mood: Mood = this.mood ? (this.mood.scorer === v.team ? 'cheer' : 'sulk') : null
+      const moodT = !this.mood ? 0 : this.party ? (t - this.mood.since) % MOOD_TIME : t - this.mood.since // a won match: over and over
       const dvx = v.vel.x - v.seen.x, dvz = v.vel.z - v.seen.z
       v.seen = v.vel
       applyPose(v.rig, v.motion.update({
-        t, dt, dvx, dvz, look, coil, stunned: this.stunned.has(id), mood, moodT: this.mood ? t - this.mood.since : 0,
+        t, dt, dvx, dvz, look, coil, stunned: this.stunned.has(id), mood, moodT,
       }, toLocal, toWorld))
     }
   }
@@ -320,6 +326,12 @@ export class GameScene {
     this.confetti.burst(sx * TABLE_HALF_LENGTH, 1, 0, -sx, 0, [TEAM_COLOR[scorer], 0xffffff, TEAM_COLOR[scorer], 0xffd23f], 180)
   }
 
+  // The match is won: the winners jump on and on, confetti keeps falling and the camera circles the table. null ends it.
+  celebrate(winner: Team | null): void {
+    this.party = winner && { winner, since: this.lastT, next: this.lastT }
+    this.mood = winner && { scorer: winner, since: this.lastT }
+  }
+
   setAim(origin: { x: number; z: number } | null, dirX: number, dirZ: number, power: number, role: Role): void {
     this.aim = origin ? { x: dirX, z: dirZ, power } : null
     this.arrow.visible = !!origin
@@ -337,7 +349,15 @@ export class GameScene {
     this.lastT = t
     if (dt > 0) this.animate(t, dt)
     this.room.update(t, dt)
+    const p = this.party
+    if (p && t >= p.next) {
+      p.next = t + SHOWER_EVERY
+      this.confetti.shower(TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, 7, [TEAM_COLOR[p.winner], 0xffffff, 0xffd23f], 30)
+    }
     this.confetti.update(dt)
+    if (p) this.yaw += ORBIT * dt * Math.min(1, (t - p.since) / 2) // gathers speed
+    else this.yaw = Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw)) * Math.exp(-2 * dt) // back the short way round
+    this.placeCamera()
     const f = this.flash, k = f ? (t - f.since) / FLASH_TIME : 1
     if (f && k < 1) {
       this.railNeon.emissive.setHex(f.color)

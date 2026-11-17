@@ -66,6 +66,7 @@ const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_T
 function newGame(vs: 'human' | Level | null) {
   opponent = vs
   match = new Match(PIECES)
+  scene.celebrate(null)
   table.reset()
   mode = 'ground'
   busy = false
@@ -154,7 +155,10 @@ function clearAim() {
 
 function endTurn(goalAgainst: Team | null) {
   const out = match.endTurn({ goalAgainst, tipped: table.tippedIds() })
-  if (out.winner) sfx.win()
+  if (out.winner) {
+    sfx.win()
+    scene.celebrate(out.winner)
+  }
   if (out.kickoff) table.reset()
   for (const id of out.standUp) table.standUp(id)
   busy = false

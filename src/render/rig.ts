@@ -73,7 +73,7 @@ export type Drive = {
 }
 
 const HEAD_EASE = 6 // per second
-const MOOD_TIME = 2.2
+export const MOOD_TIME = 2.2
 const RISE_TIME = 2
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x))

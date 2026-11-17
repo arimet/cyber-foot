@@ -33,7 +33,7 @@ export function createHud(
     </div>
     <div class="corner"><button class="lang" type="button"></button><button class="mute" type="button"></button><button class="view" type="button"></button></div>
     <div class="goal-flash" hidden aria-live="polite"><b></b></div>
-    <div class="end" hidden><p></p><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
+    <div class="end" hidden><p></p><div class="final"><b class="cyan"></b> – <b class="magenta"></b></div><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
     <div class="menu" hidden>
       <h1>cyber-foot</h1>
       <button type="button" data-vs="human" data-t="twoPlayers"></button>
@@ -94,6 +94,8 @@ export function createHud(
     end.hidden = !s.winner || s.menu
     if (s.winner) {
       q('.end p').textContent = d.wins(NAME[s.winner])
+      q('.final .cyan').textContent = String(s.score.cyan)
+      q('.final .magenta').textContent = String(s.score.magenta)
       end.className = `end ${s.winner}`
     }
   }
