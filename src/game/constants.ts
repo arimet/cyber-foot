@@ -21,6 +21,7 @@ export const BALL_RADIUS = 0.35
 export const BALL_MASS = 0.3
 
 export const MAX_IMPULSE = 16
+export const SHOT_BOOST: Record<Role, number> = { heavy: 1.5, keeper: 1, light: 1 } // heavies flick harder: as fast as the keeper
 export const LOB_ANGLE_DEG = 35
 
 export const SETTLE_SPEED = 0.12

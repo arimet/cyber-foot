@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MASS, MAX_PULL, MIN_PULL } from '../src/game/constants'
+import { MASS, MAX_PULL, MIN_PULL, SHOT_BOOST } from '../src/game/constants'
 import { aimFromDrag, arrowLength } from '../src/game/aim'
 
 const o = { x: 0, z: 0 }
@@ -22,6 +22,6 @@ describe('aim', () => {
   })
 
   it("a light piece's arrow is longer than a heavy one's at equal power", () => {
-    expect(arrowLength(0.5, 'light') / arrowLength(0.5, 'heavy')).toBeCloseTo(MASS.heavy / MASS.light)
+    expect(arrowLength(0.5, 'light') / arrowLength(0.5, 'heavy')).toBeCloseTo(MASS.heavy / MASS.light / SHOT_BOOST.heavy) // the arrow is the launch speed
   })
 })

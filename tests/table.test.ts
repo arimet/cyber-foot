@@ -42,6 +42,15 @@ describe('Table', () => {
     expect(dLight).toBeGreaterThan(1.5 * dHeavy)
   })
 
+  it('a heavy at full power leaves at least as fast as the keeper', () => {
+    const launch = (id: string) => {
+      table.reset()
+      table.shoot({ pieceId: id, dirX: 0, dirZ: 1, power: 1, mode: 'ground' })
+      return table.piecePose(id).vz
+    }
+    expect(launch('cyan-heavy1')).toBeGreaterThanOrEqual(launch('cyan-keeper') - 1e-6)
+  })
+
   it('a piece driven into the ball sends it forward', () => {
     table.placePiece('cyan-light1', -3, 0)
     table.placeBall(-1.5, BALL_RADIUS, 0)

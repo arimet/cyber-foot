@@ -1,4 +1,4 @@
-import { MASS, MAX_IMPULSE, MAX_PULL, MIN_PULL } from './constants'
+import { MASS, MAX_IMPULSE, MAX_PULL, MIN_PULL, SHOT_BOOST } from './constants'
 import type { Role } from './types'
 
 type P = { x: number; z: number }
@@ -14,4 +14,4 @@ export function aimFromDrag(origin: P, pointer: P): { dirX: number; dirZ: number
 }
 
 // Proportional to launch speed, so a light piece's arrow shows its longer reach.
-export const arrowLength = (power: number, role: Role): number => ((power * MAX_IMPULSE) / MASS[role]) * ARROW_SCALE
+export const arrowLength = (power: number, role: Role): number => ((power * MAX_IMPULSE * SHOT_BOOST[role]) / MASS[role]) * ARROW_SCALE

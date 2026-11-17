@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import {
   BALL_MASS, BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, KICKOFF,
-  GLASS_CURVE, LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS,
+  GLASS_CURVE, LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS, SHOT_BOOST,
   TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, TIP_COS,
 } from '../game/constants'
 import { type Blocker, glassProfile, railGap, rampProfile, segDist, sweep } from '../game/arena'
@@ -214,7 +214,7 @@ export class Table {
 
   shoot(shot: Shot): void {
     const b = this.body(shot.pieceId)
-    const j = shot.power * MAX_IMPULSE
+    const j = shot.power * MAX_IMPULSE * SHOT_BOOST[this.role(shot.pieceId)]
     b.applyImpulse({ x: shot.dirX * j, y: 0, z: shot.dirZ * j }, true)
     this.calm = 0
     this.goalReported = false
