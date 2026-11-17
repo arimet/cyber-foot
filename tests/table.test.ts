@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, KICKOFF, MAX_TURN_STEPS, PIECES, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH,
 } from '../src/game/constants'
-import { RAMP_RADIUS, PIECE_INSET, THROW_IN_GAP } from '../src/game/constants'
+import { RAMP_RADIUS, PIECE_INSET } from '../src/game/constants'
 import { railGap } from '../src/game/arena'
 import { Table } from '../src/physics/table'
 
@@ -89,6 +89,27 @@ describe('Table', () => {
     expect(b.y).toBeCloseTo(BALL_RADIUS, 1)
   })
 
+  it('a hard ball into a rail comes back out with pace', () => {
+    table.placeBall(0, BALL_RADIUS, TABLE_HALF_WIDTH - 0.9, 0, 0, 12)
+    table.runTurn()
+    expect(table.ballPose().z).toBeLessThan(TABLE_HALF_WIDTH / 2)
+  })
+
+  it('a ball climbing the glass above a rail is sent back toward the middle', () => {
+    table.placeBall(0, 1.2, TABLE_HALF_WIDTH - 0.4, 0, 9, 0) // straight up along the glass
+    let top = false
+    for (let i = 0; i < MAX_TURN_STEPS; i++) {
+      table.step()
+      const b = table.ballPose()
+      if (b.y > 2) top = true
+      if (top && b.y < 1.2) {
+        expect(railGap(b.x, b.z).d).toBeGreaterThan(1.5)
+        return
+      }
+    }
+    throw new Error('the ball never came back down')
+  })
+
   it('a piece driven into a rail stops off the ramp, upright', () => {
     table.placePiece('cyan-heavy1', 0, 3)
     table.shoot({ pieceId: 'cyan-heavy1', dirX: 0, dirZ: 1, power: 0.5, mode: 'ground' })
@@ -96,15 +117,6 @@ describe('Table', () => {
     const p = table.piecePose('cyan-heavy1')
     expect(railGap(p.x, p.z).d).toBeGreaterThanOrEqual(PIECE_INSET + BASE_RADIUS.heavy - 0.05)
     expect(table.isTipped('cyan-heavy1')).toBe(false)
-  })
-
-  it('throwIn brings a dead ball off the rail, clear of the pieces', () => {
-    table.placeBall(3, BALL_RADIUS, TABLE_HALF_WIDTH - 1)
-    const s = table.throwIn()!
-    expect(s.x).toBeCloseTo(3, 2)
-    expect(s.z).toBeCloseTo(TABLE_HALF_WIDTH - THROW_IN_GAP, 2)
-    table.placeBall(0, BALL_RADIUS, 0)
-    expect(table.throwIn()).toBeNull()
   })
 
   it('a turn always ends within MAX_TURN_STEPS', () => {

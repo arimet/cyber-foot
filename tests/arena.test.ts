@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CORNER_RADIUS, THROW_IN_GAP, TABLE_HALF_LENGTH as L, TABLE_HALF_WIDTH as W } from '../src/game/constants'
-import { railGap, sweep, throwInSpot } from '../src/game/arena'
+import { CORNER_RADIUS, TABLE_HALF_LENGTH as L, TABLE_HALF_WIDTH as W } from '../src/game/constants'
+import { railGap, sweep } from '../src/game/arena'
 
 describe('railGap', () => {
   it('measures to the nearest rail and points back into the pitch', () => {
@@ -20,33 +20,6 @@ describe('railGap', () => {
     expect(g.d).toBeCloseTo(CORNER_RADIUS - Math.SQRT2, 1)
     expect(g.nx).toBeCloseTo(Math.SQRT1_2, 1)
     expect(g.nz).toBeCloseTo(Math.SQRT1_2, 1)
-  })
-})
-
-describe('throwInSpot', () => {
-  it('leaves a ball in open play alone', () => {
-    expect(throwInSpot(0, 0, [])).toBeNull()
-    expect(throwInSpot(-L + 0.5, 0, [])).toBeNull() // right in front of the goal
-    expect(throwInSpot(-L + 0.5, 1.5, [])).toBeNull() // by the post, still in front of the goal
-  })
-
-  it('brings a ball off the rail, straight back into the pitch', () => {
-    const s = throwInSpot(3, W - 0.9, [])!
-    expect(s.x).toBeCloseTo(3, 2)
-    expect(s.z).toBeCloseTo(W - THROW_IN_GAP, 2)
-  })
-
-  it('brings a ball out of a corner', () => {
-    const s = throwInSpot(L - 1, W - 1, [])!
-    expect(railGap(s.x, s.z).d).toBeGreaterThanOrEqual(THROW_IN_GAP - 0.01) // the arc is sampled
-    expect(s.x).toBeLessThan(L - 1)
-    expect(s.z).toBeLessThan(W - 1)
-  })
-
-  it('goes on past a piece standing on its spot', () => {
-    const s = throwInSpot(3, W - 0.9, [{ ax: 3, az: W - THROW_IN_GAP, bx: 3, bz: W - THROW_IN_GAP, r: 0.6 }])!
-    expect(s.x).toBeCloseTo(3, 2)
-    expect(W - THROW_IN_GAP - s.z).toBeGreaterThanOrEqual(0.6 + 0.35)
   })
 })
 

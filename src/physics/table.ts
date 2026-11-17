@@ -1,10 +1,10 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import {
   BALL_MASS, BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, KICKOFF,
-  LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS,
+  GLASS_CURVE, LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS,
   TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, TIP_COS,
 } from '../game/constants'
-import { type Blocker, railGap, rampProfile, segDist, sweep, throwInSpot } from '../game/arena'
+import { type Blocker, glassProfile, railGap, rampProfile, segDist, sweep } from '../game/arena'
 import type { PieceSpec, Shot, Team } from '../game/types'
 
 export type Contact = { kind: 'piece' | 'ball' | 'rail'; strength: number }
@@ -24,6 +24,7 @@ const WALL_BOUNCE = 0.5
 const PIECE_DAMPING = 0.45
 const PIECE_SPIN_DAMPING = 4 // a piece lying on its side would roll on its round base forever
 const BALL_DAMPING = 1.6
+const BALL_RAIL_DAMPING = 0.1 // up the curved rail or the glass: nothing rolls against it, so it comes back with pace
 const BALL_SPIN_DAMPING = 0.8
 // Knock: the flat bases meet below the centre of mass, so plain contact rarely tips anything. A head-on hit is scored
 // as (closing speed - KNOCK_SPEED) x (other mass / own mass); at KNOCK_SEVERITY or more the piece is given a fixed
@@ -124,14 +125,19 @@ export class Table {
       for (const t of [-1, 1]) this.fixedBox(boxX, GOAL_HEIGHT / 2, t * (G + WALL / 2), GOAL_DEPTH / 2, GOAL_HEIGHT / 2, WALL / 2)
       this.fixedBox(boxX, GOAL_HEIGHT + WALL / 2, 0, GOAL_DEPTH / 2, WALL / 2, G + WALL)
     }
+    // Frictionless: a rolling ball keeps its spin on the way up, and friction would have it fight that spin on the
+    // way down, coming back at half pace.
     const rail = (profile: [number, number][], member: number, filter: number) => {
       const { positions, indices } = sweep(profile)
       this.world.createCollider(
         RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-          .setRestitution(WALL_BOUNCE).setFriction(FRICTION).setCollisionGroups(groups(member, filter)),
+          .setRestitution(WALL_BOUNCE)
+          .setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setCollisionGroups(groups(member, filter)),
       )
     }
-    rail([...rampProfile(RAMP_RADIUS), [0, H]], 4, BALL_GROUP)
+    // closed off straight up at the end of the curve, so a ball can never come to rest on top of it
+    rail([...rampProfile(RAMP_RADIUS), ...glassProfile(RAMP_RADIUS, GLASS_CURVE), [GLASS_CURVE, H]], 4, BALL_GROUP)
     rail([[PIECE_INSET, 0], [PIECE_INSET, H]], 8, PIECE_GROUP)
   }
 
@@ -221,8 +227,10 @@ export class Table {
       const v = b.linvel()
       this.preStep.set(id, { x: v.x, z: v.z })
     }
-    const bv = this.ball.linvel()
+    const bv = this.ball.linvel(), bt = this.ball.translation()
     this.ballPre = { x: bv.x, y: bv.y, z: bv.z }
+    const climbing = bt.y > BALL_RADIUS + 0.02 && railGap(bt.x, bt.z).d < GLASS_CURVE
+    this.ball.setLinearDamping(climbing ? BALL_RAIL_DAMPING : BALL_DAMPING)
     this.world.step(this.events)
     const knocked = new Set<string>()
     const contacts: Contact[] = []
@@ -386,28 +394,6 @@ export class Table {
       }
     }
     this.placePiece(id, spot.x, spot.z)
-  }
-
-  // Where a dead ball against a rail should be brought back to, or null when it is in play.
-  throwIn(): { x: number; z: number } | null {
-    const t = this.ball.translation()
-    return throwInSpot(t.x, t.z, this.blockers())
-  }
-
-  // Moves the ball along the floor to (x, z), turning it as if it rolled there.
-  rollBallTo(x: number, z: number): void {
-    const t = this.ball.translation(), dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz)
-    if (d > 1e-9) {
-      const a = d / BALL_RADIUS, s = Math.sin(a / 2) / d, q = this.ball.rotation()
-      const r = { x: dz * s, y: 0, z: -dx * s, w: Math.cos(a / 2) } // about (dz, 0, -dx): rolling toward (dx, dz)
-      this.ball.setRotation({
-        x: r.w * q.x + r.x * q.w + r.y * q.z - r.z * q.y,
-        y: r.w * q.y - r.x * q.z + r.y * q.w + r.z * q.x,
-        z: r.w * q.z + r.x * q.y - r.y * q.x + r.z * q.w,
-        w: r.w * q.w - r.x * q.x - r.y * q.y - r.z * q.z,
-      }, true)
-    }
-    this.placeBall(x, BALL_RADIUS, z)
   }
 
   isSettled(): boolean {

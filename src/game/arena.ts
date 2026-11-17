@@ -1,6 +1,4 @@
-import {
-  BALL_RADIUS, CORNER_RADIUS, GOAL_HALF_WIDTH, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, THROW_IN_GAP,
-} from './constants'
+import { CORNER_RADIUS, GOAL_HALF_WIDTH, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH } from './constants'
 
 // The rail line seen from above: two open paths, one per long side, each running from a goal post round both
 // rounded corners to the other goal post. Each sample carries the normal pointing into the pitch.
@@ -47,20 +45,6 @@ export const segDist = (x: number, z: number, s: Blocker) => {
   return Math.hypot(x - (s.ax + t * dx), z - (s.az + t * dz))
 }
 
-// Throw-in: a ball left against a rail, where no piece can get behind it, comes straight back out to THROW_IN_GAP,
-// or further if a piece stands there. Never in front of a goal mouth: a ball there is a chance, not a dead ball.
-export function throwInSpot(x: number, z: number, blockers: readonly Blocker[]): { x: number; z: number } | null {
-  if (Math.abs(z) < GOAL_HALF_WIDTH) return null
-  const g = railGap(x, z)
-  if (g.d >= THROW_IN_GAP) return null
-  for (let extra = 0; extra <= 4; extra += 0.25) {
-    const k = THROW_IN_GAP - g.d + extra
-    const sx = x + g.nx * k, sz = z + g.nz * k
-    if (blockers.every(o => segDist(sx, sz, o) >= o.r + BALL_RADIUS + 0.01)) return { x: sx, z: sz }
-  }
-  return null
-}
-
 // A surface swept along both rail paths. Profile points are (inset from the rail line, height), listed from the
 // pitch side outward/upward, so the faces look at the pitch (or up, or out, for a profile going that way).
 export function sweep(profile: readonly (readonly [number, number])[]): { positions: Float32Array; indices: Uint32Array } {
@@ -76,6 +60,16 @@ export function sweep(profile: readonly (readonly [number, number])[]): { positi
     }
   }
   return { positions: new Float32Array(pos), indices: new Uint32Array(idx) }
+}
+
+// The invisible glass above the rail: up from the rail's top at y0, curving in over the pitch until it is level.
+export function glassProfile(y0: number, radius: number, steps = 8): [number, number][] {
+  const out: [number, number][] = []
+  for (let k = 1; k <= steps; k++) {
+    const a = (k / steps) * (Math.PI / 2)
+    out.push([radius - radius * Math.cos(a), y0 + radius * Math.sin(a)])
+  }
+  return out
 }
 
 // The ramp's curve, from where it leaves the floor up to the rail's top.

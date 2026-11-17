@@ -10,8 +10,8 @@ export const RAIL_HEIGHT = 0.4 // visible rail
 export const GLASS_HEIGHT = 6 // invisible glass walls and ceiling: nothing leaves the table
 export const RAMP_RADIUS = 0.8 // the rails curve up from the floor, so a ball against one rolls back out
 export const CORNER_RADIUS = 2 // rounded corners, seen from above
+export const GLASS_CURVE = 1.8 // above the rails the invisible glass curves in, sending a climbing ball back to the middle
 export const PIECE_INSET = 0.4 // pieces stop against an invisible wall this far in, off the ramp
-export const THROW_IN_GAP = 1.6 // a ball left closer than this to a rail is brought back out to it
 
 export const BASE_RADIUS: Record<Role, number> = { heavy: 0.9, keeper: 0.75, light: 0.6 }
 export const BODY_HEIGHT: Record<Role, number> = { heavy: 1.6, keeper: 1.5, light: 1.2 }
