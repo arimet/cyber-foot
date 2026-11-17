@@ -1,7 +1,5 @@
 node_modules
 dist
-.superpowers/
-.claude/
 *.mp4
 poses-*.jpg
 balle.jpg
