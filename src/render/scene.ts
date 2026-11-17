@@ -1,9 +1,10 @@
 import * as THREE from 'three'
 import { arrowLength } from '../game/aim'
 import {
-  BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, RAIL_HEIGHT, TABLE_HALF_LENGTH,
+  BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, RAMP_RADIUS, TABLE_HALF_LENGTH,
   TABLE_HALF_WIDTH,
 } from '../game/constants'
+import { RAIL_PATHS, rampProfile, sweep } from '../game/arena'
 import type { PieceSpec, Role, Team } from '../game/types'
 import type { Table } from '../physics/table'
 import { type Animal, type Rig, createAnimal } from './animals'
@@ -103,25 +104,42 @@ export class GameScene {
   }
 
   private buildTable() {
-    const L = TABLE_HALF_LENGTH, W = TABLE_HALF_WIDTH
+    const L = TABLE_HALF_LENGTH
     const side = new THREE.MeshStandardMaterial({ color: 0x15171d, roughness: 0.9 })
     this.add(new THREE.BoxGeometry(2 * TOP_HALF_LENGTH, 0.2, 2 * TOP_HALF_WIDTH), side, 0, -0.1, 0)
     const pitch = createPitch()
     pitch.position.y = 0.002
     this.scene.add(pitch)
-    // rails: wet dark metal, a thin neon strip along the inner top edge
+    // rails: wet dark metal curving up from the turf, a thin neon strip along the top edge
     const rail = new THREE.MeshStandardMaterial({ color: 0x3a4152, roughness: 0.22, metalness: 0.35 })
-    const edge = neon(LINE, 0.7)
-    const railBox = (x: number, z: number, lx: number, lz: number, ix: number, iz: number) => {
-      this.add(new THREE.BoxGeometry(lx, RAIL_HEIGHT, lz), rail, x, RAIL_HEIGHT / 2, z)
-      // (ix, iz): toward the pitch
-      this.add(new THREE.BoxGeometry(ix ? 0.06 : lx, 0.03, iz ? 0.06 : lz), edge, x + ix * 0.12, RAIL_HEIGHT + 0.015, z + iz * 0.12)
+    const R = RAMP_RADIUS, T = 0.3
+    const swept = (profile: [number, number][], mat: THREE.Material) => {
+      const { positions, indices } = sweep(profile)
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geo.setIndex(new THREE.BufferAttribute(indices, 1))
+      geo.computeVertexNormals()
+      this.scene.add(new THREE.Mesh(geo, mat))
     }
-    for (const s of [-1, 1]) {
-      railBox(0, s * (W + 0.15), 2 * L + 0.6, 0.3, 0, -s)
-      const seg = W - GOAL_HALF_WIDTH
-      for (const u of [-1, 1]) railBox(s * (L + 0.15), u * (GOAL_HALF_WIDTH + seg / 2), 0.3, seg, -s, 0)
+    swept(rampProfile(R, 12), rail)
+    swept([[0, R], [-T, R]], rail) // top
+    swept([[-T, R], [-T, 0]], rail) // outer face
+    swept([[0.03, R + 0.004], [-0.05, R + 0.004]], neon(LINE, 0.7))
+    // end caps by the goal posts: the rail's cross-section, both ways round so it shows from either side
+    const outline: [number, number][] = [...rampProfile(R, 12), [-T, R]], cap: number[] = []
+    for (const path of RAIL_PATHS) {
+      for (const p of [path[0], path[path.length - 1]]) {
+        const at = ([u, y]: [number, number]) => [p.x + p.nx * u, y, p.z + p.nz * u]
+        for (let j = 1; j < outline.length; j++) {
+          const a = at([-T, 0]), b = at(outline[j - 1]), c = at(outline[j])
+          cap.push(...a, ...b, ...c, ...a, ...c, ...b)
+        }
+      }
     }
+    const capGeo = new THREE.BufferGeometry()
+    capGeo.setAttribute('position', new THREE.Float32BufferAttribute(cap, 3))
+    capGeo.computeVertexNormals()
+    this.scene.add(new THREE.Mesh(capGeo, rail))
     for (const [sx, team] of [[-1, 'cyan'], [1, 'magenta']] as const) {
       const goal = createGoal(TEAM_COLOR[team])
       goal.position.x = sx * L

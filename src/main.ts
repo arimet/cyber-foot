@@ -18,6 +18,7 @@ const AFTER_GOAL_STEPS = 45 // let the ball hit the net before the kickoff reset
 const PICK_SLACK = 0.25 // fingers are wider than the base
 const AI_TEAM: Team = 'magenta'
 const AI_AIM_MS = 700 // the AI shows its aim before shooting
+const THROW_IN_STEPS = 24 // a dead ball rolls back off the rail in 0.4 s
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement
 const table = await Table.create()
@@ -27,6 +28,7 @@ let mode: ShotMode = 'ground'
 let busy = false
 let steps = 0
 let goal: { against: Team; left: number } | null = null
+let throwIn: { from: { x: number; z: number }; to: { x: number; z: number }; k: number } | null = null
 let origin: { x: number; z: number } | null = null
 let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
@@ -70,6 +72,7 @@ function newGame(vs: 'human' | Level | null) {
   mode = 'ground'
   busy = false
   goal = null
+  throwIn = null
   aiThought = null
   aiAim = null
   clearAim()
@@ -163,6 +166,15 @@ function endTurn(goalAgainst: Team | null) {
 }
 
 function advance() {
+  if (throwIn) {
+    const k = ++throwIn.k / THROW_IN_STEPS, e = k * k * (3 - 2 * k), { from, to } = throwIn
+    table.rollBallTo(from.x + (to.x - from.x) * e, from.z + (to.z - from.z) * e)
+    if (k >= 1) {
+      throwIn = null
+      endTurn(null)
+    }
+    return
+  }
   const r = table.step()
   steps++
   for (const c of r.contacts) sfx[c.kind === 'piece' ? 'hit' : c.kind](c.strength)
@@ -177,7 +189,12 @@ function advance() {
     scene.cheer(other(r.goalAgainst))
     sfx.goal()
   }
-  else if (table.isSettled() || steps >= MAX_TURN_STEPS) endTurn(null)
+  else if (table.isSettled() || steps >= MAX_TURN_STEPS) {
+    const to = table.throwIn()
+    if (!to) return endTurn(null)
+    const b = table.ballPose()
+    throwIn = { from: { x: b.x, z: b.z }, to, k: 0 }
+  }
 }
 
 let acc = 0, last = performance.now()

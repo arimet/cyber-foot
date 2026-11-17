@@ -1,9 +1,10 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import {
   BALL_MASS, BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, KICKOFF,
-  LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECES, SETTLE_SPEED, SETTLE_STEPS, TABLE_HALF_LENGTH,
-  TABLE_HALF_WIDTH, TIP_COS,
+  LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS,
+  TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, TIP_COS,
 } from '../game/constants'
+import { type Blocker, railGap, rampProfile, segDist, sweep, throwInSpot } from '../game/arena'
 import type { PieceSpec, Shot, Team } from '../game/types'
 
 export type Contact = { kind: 'piece' | 'ball' | 'rail'; strength: number }
@@ -34,6 +35,11 @@ const FALL_SPIN_DAMPING = 0.3
 const LYING_DAMPING = 3 // a figure lying on its side scrapes to a halt (friction would trip it over its head)
 const FALLEN_BASE_SHARE = 0.4 // a knocked piece loses its weighted base's pull, or it would rock back up like a weeble
 const LAID_COS = 0.2 // past ~78° the piece is down: heavy spin damping, so it never cartwheels back up
+
+// Collision groups: the curved ramp along the rails only meets the ball; pieces stop at a straight wall a little in
+// front of it instead, since a flat base riding up a curve would tip.
+const groups = (member: number, filter: number) => (member << 16) | filter
+const BALL_GROUP = 1, PIECE_GROUP = 2
 
 let ready: Promise<void> | null = null
 
@@ -89,7 +95,7 @@ export class Table {
     )
     this.ballCollider = this.world.createCollider(
       RAPIER.ColliderDesc.ball(BALL_RADIUS).setMass(BALL_MASS).setRestitution(BALL_BOUNCE).setFriction(FRICTION)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+        .setCollisionGroups(groups(BALL_GROUP, 0xffff)).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
       this.ball,
     ).handle
     this.reset()
@@ -118,6 +124,15 @@ export class Table {
       for (const t of [-1, 1]) this.fixedBox(boxX, GOAL_HEIGHT / 2, t * (G + WALL / 2), GOAL_DEPTH / 2, GOAL_HEIGHT / 2, WALL / 2)
       this.fixedBox(boxX, GOAL_HEIGHT + WALL / 2, 0, GOAL_DEPTH / 2, WALL / 2, G + WALL)
     }
+    const rail = (profile: [number, number][], member: number, filter: number) => {
+      const { positions, indices } = sweep(profile)
+      this.world.createCollider(
+        RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
+          .setRestitution(WALL_BOUNCE).setFriction(FRICTION).setCollisionGroups(groups(member, filter)),
+      )
+    }
+    rail([...rampProfile(RAMP_RADIUS), [0, H]], 4, BALL_GROUP)
+    rail([[PIECE_INSET, 0], [PIECE_INSET, H]], 8, PIECE_GROUP)
   }
 
   // Body origin sits on the floor, under the base's centre.
@@ -132,7 +147,7 @@ export class Table {
       RAPIER.ColliderDesc.roundCylinder(BASE_HALF, r - BASE_ROUND, BASE_ROUND)
         .setTranslation(0, BASE_HALF + BASE_ROUND, 0)
         .setMass(m * BASE_SHARE).setRestitution(PIECE_BOUNCE).setFriction(FRICTION)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+        .setCollisionGroups(groups(PIECE_GROUP, 0xffff)).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
       body,
     ))
     const bodyR = r * 0.55
@@ -141,7 +156,7 @@ export class Table {
       RAPIER.ColliderDesc.capsule(bodyHalf, bodyR)
         .setTranslation(0, baseTop + bodyHalf + bodyR, 0)
         .setMass(m * (1 - BASE_SHARE)).setRestitution(PIECE_BOUNCE).setFriction(FRICTION)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+        .setCollisionGroups(groups(PIECE_GROUP, 0xffff)).setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
       body,
     ))
     return body
@@ -336,22 +351,26 @@ export class Table {
     this.body(id).setRotation({ x: 0, y: 0, z: Math.sin(angleRad / 2), w: Math.cos(angleRad / 2) }, true)
   }
 
+  // What stands or lies on the floor: each piece as a segment from its base to its head (a point when it stands).
+  private blockers(except?: string): Blocker[] {
+    return this.pieces.filter(p => p.id !== except).map(p => {
+      const b = this.body(p.id), t = b.translation(), q = b.rotation(), h = BODY_HEIGHT[p.role]
+      const ux = 2 * (q.x * q.y - q.w * q.z), uz = 2 * (q.y * q.z + q.w * q.x) // local up axis, on the floor
+      return { ax: t.x, az: t.z, bx: t.x + ux * h, bz: t.z + uz * h, r: BASE_RADIUS[p.role] }
+    })
+  }
+
   // Upright where it lies if that spot is free, else the nearest free spot on rings around it, kept on the table.
   // A lying piece blocks the strip from its base to its head, not just its base circle.
   standUp(id: string): void {
     const r = BASE_RADIUS[this.role(id)]
     const here = this.body(id).translation()
-    const blockers = [
-      ...this.pieces.filter(p => p.id !== id).map(p => {
-        const b = this.body(p.id), t = b.translation(), q = b.rotation(), h = BODY_HEIGHT[p.role]
-        const ux = 2 * (q.x * q.y - q.w * q.z), uz = 2 * (q.y * q.z + q.w * q.x) // local up axis, on the floor
-        return { ax: t.x, az: t.z, bx: t.x + ux * h, bz: t.z + uz * h, r: BASE_RADIUS[p.role] }
-      }),
-      (() => { const t = this.ball.translation(); return { ax: t.x, az: t.z, bx: t.x, bz: t.z, r: BALL_RADIUS } })(),
-    ]
+    const t = this.ball.translation()
+    const blockers = [...this.blockers(id), { ax: t.x, az: t.z, bx: t.x, bz: t.z, r: BALL_RADIUS }]
     const maxX = TABLE_HALF_LENGTH - r, maxZ = TABLE_HALF_WIDTH - r
     const free = (x: number, z: number) =>
-      Math.abs(x) <= maxX && Math.abs(z) <= maxZ && blockers.every(o => segDist(x, z, o) >= r + o.r + 0.01)
+      Math.abs(x) <= maxX && Math.abs(z) <= maxZ && railGap(x, z).d >= PIECE_INSET + r &&
+      blockers.every(o => segDist(x, z, o) >= r + o.r + 0.01)
     const x0 = Math.max(-maxX, Math.min(maxX, here.x)), z0 = Math.max(-maxZ, Math.min(maxZ, here.z))
     let spot = { x: x0, z: z0 }
     search: if (!free(x0, z0)) {
@@ -367,6 +386,28 @@ export class Table {
       }
     }
     this.placePiece(id, spot.x, spot.z)
+  }
+
+  // Where a dead ball against a rail should be brought back to, or null when it is in play.
+  throwIn(): { x: number; z: number } | null {
+    const t = this.ball.translation()
+    return throwInSpot(t.x, t.z, this.blockers())
+  }
+
+  // Moves the ball along the floor to (x, z), turning it as if it rolled there.
+  rollBallTo(x: number, z: number): void {
+    const t = this.ball.translation(), dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz)
+    if (d > 1e-9) {
+      const a = d / BALL_RADIUS, s = Math.sin(a / 2) / d, q = this.ball.rotation()
+      const r = { x: dz * s, y: 0, z: -dx * s, w: Math.cos(a / 2) } // about (dz, 0, -dx): rolling toward (dx, dz)
+      this.ball.setRotation({
+        x: r.w * q.x + r.x * q.w + r.y * q.z - r.z * q.y,
+        y: r.w * q.y - r.x * q.z + r.y * q.w + r.z * q.x,
+        z: r.w * q.z + r.x * q.y - r.y * q.x + r.z * q.w,
+        w: r.w * q.w - r.x * q.x - r.y * q.y - r.z * q.z,
+      }, true)
+    }
+    this.placeBall(x, BALL_RADIUS, z)
   }
 
   isSettled(): boolean {
@@ -393,10 +434,4 @@ export class Table {
   ballPose(): Pose {
     return Table.pose(this.ball)
   }
-}
-
-const segDist = (x: number, z: number, s: { ax: number; az: number; bx: number; bz: number }) => {
-  const dx = s.bx - s.ax, dz = s.bz - s.az, len2 = dx * dx + dz * dz
-  const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / len2)) : 0
-  return Math.hypot(x - (s.ax + t * dx), z - (s.az + t * dz))
 }

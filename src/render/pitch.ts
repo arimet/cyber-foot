@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { GOAL_DEPTH, GOAL_HALF_WIDTH, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH } from '../game/constants'
+import { CORNER_RADIUS, GOAL_DEPTH, GOAL_HALF_WIDTH, RAMP_RADIUS, TABLE_HALF_LENGTH, TABLE_HALF_WIDTH } from '../game/constants'
 
 // The table top: synthetic turf in mown stripes, a shade lighter than the dark bases so the pieces stand out, with
 // worn white lines painted on. Outside the rails, black rubber.
@@ -23,10 +23,15 @@ export function createPitch(): THREE.Mesh {
   c.fillStyle = '#15171d'
   c.fillRect(0, 0, cv.width, cv.height)
   const stripes = 10
+  c.save() // turf only inside the rounded corners
+  c.beginPath()
+  c.roundRect(X(-L), Z(-W), 2 * L * PX, 2 * W * PX, CORNER_RADIUS * PX)
+  c.clip()
   for (let i = 0; i < stripes; i++) {
     c.fillStyle = i % 2 ? '#2b5d57' : '#37736b'
     c.fillRect(X(-L + (2 * L * i) / stripes), Z(-W), (2 * L * PX) / stripes + 1, 2 * W * PX)
   }
+  c.restore()
   c.fillStyle = '#2b5d57' // the goal mouths
   for (const s of [-1, 1]) c.fillRect(X(s < 0 ? -L - GOAL_DEPTH : L), Z(-GOAL_HALF_WIDTH), GOAL_DEPTH * PX, 2 * GOAL_HALF_WIDTH * PX)
   // turf grain
@@ -40,7 +45,7 @@ export function createPitch(): THREE.Mesh {
   c.putImageData(img, 0, 0)
 
   // lines
-  const m = 0.35 // touchlines sit a little inside the rails
+  const m = RAMP_RADIUS + 0.15 // touchlines sit just in from the foot of the curved rails
   c.strokeStyle = 'rgba(225, 232, 230, 0.75)'
   c.fillStyle = c.strokeStyle
   c.lineWidth = 0.08 * PX
@@ -56,7 +61,9 @@ export function createPitch(): THREE.Mesh {
     c.fill()
   }
   const lx = L - m, lz = W - m
-  rect(-lx, -lz, lx, lz)
+  c.beginPath() // the touchlines follow the rounded corners
+  c.roundRect(X(-lx), Z(-lz), X(lx) - X(-lx), Z(lz) - Z(-lz), (CORNER_RADIUS - m) * PX)
+  c.stroke()
   c.beginPath()
   c.moveTo(X(0), Z(-lz))
   c.lineTo(X(0), Z(lz))
@@ -70,12 +77,6 @@ export function createPitch(): THREE.Mesh {
     dot(edge - s * 2.3, 0)
     const a = Math.acos(0.9 / 1.7) // the arc outside the box
     arc(edge - s * 2.3, 0, 1.7, s < 0 ? -a : Math.PI - a, s < 0 ? a : Math.PI + a)
-    c.save() // corner arcs: only their quarter inside the lines
-    c.beginPath()
-    c.rect(X(-lx), Z(-lz), X(lx) - X(-lx), Z(lz) - Z(-lz))
-    c.clip()
-    for (const u of [-1, 1]) arc(edge, u * lz, 0.5)
-    c.restore()
   }
 
   // wear: scuffs where the paint and the turf have worn
