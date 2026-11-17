@@ -10,7 +10,8 @@ import { type Animal, type Rig, createAnimal } from './animals'
 import { createBall } from './ball'
 import { framedFocus } from './framing'
 import { FigureMotion, type Mood, applyPose } from './rig'
-import { createRoom } from './room'
+import { TOP_HALF_LENGTH, TOP_HALF_WIDTH, createPitch } from './pitch'
+import { HAZE, createRoom } from './room'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -61,9 +62,10 @@ export class GameScene {
   constructor(private readonly canvas: HTMLCanvasElement, pieces: readonly PieceSpec[]) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-    this.scene.background = new THREE.Color(0x05050c)
+    this.scene.background = new THREE.Color(HAZE)
+    this.scene.fog = new THREE.Fog(HAZE, 38, 115) // the city fades out, the table stays clear
     this.scene.add(new THREE.HemisphereLight(0x8090ff, 0x100818, 0.9))
-    const key = new THREE.DirectionalLight(0xffffff, 1.6)
+    const key = new THREE.DirectionalLight(0xffffff, 0.8)
     key.position.set(-6, 14, 10)
     const fill = new THREE.DirectionalLight(0xc8d8ff, 0.9) // from the camera side, so faces read
     fill.position.set(2, 6, 14)
@@ -99,30 +101,23 @@ export class GameScene {
 
   private buildTable() {
     const L = TABLE_HALF_LENGTH, W = TABLE_HALF_WIDTH
-    const floor = new THREE.MeshStandardMaterial({ color: 0x0f1a2a, roughness: 0.85 })
-    this.add(new THREE.BoxGeometry(2 * (L + GOAL_DEPTH + 1), 0.2, 2 * W + 2), floor, 0, -0.1, 0)
-    const line = neon(LINE, 0.7)
-    const strip = (x: number, z: number, lx: number, lz: number) => this.add(new THREE.BoxGeometry(lx, 0.01, lz), line, x, 0.005, z)
-    const t = 0.06
-    strip(0, 0, t, 2 * W) // halfway line
-    this.add(new THREE.RingGeometry(2.4, 2.4 + t, 64).rotateX(-Math.PI / 2), line, 0, 0.006, 0)
-    for (const s of [-1, 1]) {
-      const bx = 3.2, bz = 4.2 // penalty box
-      strip(s * (L - bx), 0, t, 2 * bz)
-      strip(s * (L - bx / 2), bz, bx, t)
-      strip(s * (L - bx / 2), -bz, bx, t)
-    }
-    // rails, with a neon top edge
-    const rail = new THREE.MeshStandardMaterial({ color: 0x141a2a, roughness: 0.6 })
-    const edge = neon(LINE, 0.8)
-    const railBox = (x: number, z: number, lx: number, lz: number) => {
+    const side = new THREE.MeshStandardMaterial({ color: 0x15171d, roughness: 0.9 })
+    this.add(new THREE.BoxGeometry(2 * TOP_HALF_LENGTH, 0.2, 2 * TOP_HALF_WIDTH), side, 0, -0.1, 0)
+    const pitch = createPitch()
+    pitch.position.y = 0.002
+    this.scene.add(pitch)
+    // rails: wet dark metal, a thin neon strip along the inner top edge
+    const rail = new THREE.MeshStandardMaterial({ color: 0x3a4152, roughness: 0.22, metalness: 0.35 })
+    const edge = neon(LINE, 0.7)
+    const railBox = (x: number, z: number, lx: number, lz: number, ix: number, iz: number) => {
       this.add(new THREE.BoxGeometry(lx, RAIL_HEIGHT, lz), rail, x, RAIL_HEIGHT / 2, z)
-      this.add(new THREE.BoxGeometry(lx, 0.04, lz), edge, x, RAIL_HEIGHT + 0.02, z)
+      // (ix, iz): toward the pitch
+      this.add(new THREE.BoxGeometry(ix ? 0.06 : lx, 0.03, iz ? 0.06 : lz), edge, x + ix * 0.12, RAIL_HEIGHT + 0.015, z + iz * 0.12)
     }
     for (const s of [-1, 1]) {
-      railBox(0, s * (W + 0.15), 2 * L + 0.6, 0.3)
+      railBox(0, s * (W + 0.15), 2 * L + 0.6, 0.3, 0, -s)
       const seg = W - GOAL_HALF_WIDTH
-      for (const u of [-1, 1]) railBox(s * (L + 0.15), u * (GOAL_HALF_WIDTH + seg / 2), 0.3, seg)
+      for (const u of [-1, 1]) railBox(s * (L + 0.15), u * (GOAL_HALF_WIDTH + seg / 2), 0.3, seg, -s, 0)
     }
     // goals: posts, crossbar, back frame in the defending team's colour
     for (const [s, team] of [[-1, 'cyan'], [1, 'magenta']] as const) {
@@ -292,7 +287,7 @@ export class GameScene {
     const dt = this.lastT < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.lastT))
     this.lastT = t
     if (dt > 0) this.animate(t, dt)
-    this.room.update(t)
+    this.room.update(t, dt)
     this.composer.render()
   }
 }
