@@ -40,7 +40,7 @@ export function createHud(
     <div class="corner"><button class="lang" type="button"></button><button class="mute" type="button"></button><button class="view" type="button"></button></div>
     <div class="goal-flash" hidden aria-live="polite"><b></b></div>
     <div class="end" hidden><p></p><div class="final"><b class="cyan"></b> – <b class="magenta"></b></div><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
-    <div class="drill" hidden aria-live="polite"><p></p><small></small><div class="row"><button type="button" data-a="skip"></button><button type="button" data-a="next"></button></div></div>
+    <div class="drill" hidden aria-live="polite"><p></p><small></small><div class="row"><button type="button" data-a="skip"></button><button type="button" data-a="next"></button><button type="button" data-a="drill-menu"></button></div></div>
     <div class="rules" hidden><p></p><div class="row"><button type="button" data-a="play"></button><button type="button" data-a="rules-menu"></button></div></div>
     <div class="hand" hidden aria-hidden="true">👆</div>
     <div class="menu" hidden>
@@ -74,6 +74,7 @@ export function createHud(
   q('[data-a="replay"]').addEventListener('click', h.onReplay)
   q('[data-a="menu"]').addEventListener('click', h.onMenu)
   q('[data-a="rules-menu"]').addEventListener('click', h.onMenu)
+  q('[data-a="drill-menu"]').addEventListener('click', h.onMenu) // a way out of training at any time
   q('[data-a="training"]').addEventListener('click', h.onTraining)
   q('[data-a="skip"]').addEventListener('click', h.onSkip)
   q('[data-a="next"]').addEventListener('click', h.onNext)
@@ -124,6 +125,7 @@ export function createHud(
     q('[data-a="next"]').textContent = d.next
     q('[data-a="play"]').textContent = d.playMatch
     q('[data-a="rules-menu"]').textContent = d.menu
+    q('[data-a="drill-menu"]').textContent = d.menu
     if (s.winner) {
       q('.end p').textContent = d.wins(NAME[s.winner])
       q('.final .cyan').textContent = String(s.score.cyan)
