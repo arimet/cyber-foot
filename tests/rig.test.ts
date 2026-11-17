@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type Drive, FigureMotion, MAX_LEAN, MAX_YAW, type Pose, Sway, headYaw } from '../src/render/rig'
+import { type Drive, FigureMotion, MAX_LEAN, MAX_YAW, type Pose, Sway, headYaw, tiltUp } from '../src/render/rig'
 
 const DT = 1 / 60
 
@@ -79,5 +79,34 @@ describe('figure motion', () => {
     expect(poses[36].breath).toBeLessThan(0.95) // still getting up after 0.6 s
     expect(Math.abs(poses.at(-1)!.leanZ)).toBeLessThan(0.15)
     expect(poses.at(-1)!.breath).toBeCloseTo(1, 1)
+  })
+})
+
+describe('tilting back up', () => {
+  // fallen toward +x, base radius 0.6
+  it('starts lying on its side, resting on the rim of its base', () => {
+    const p = tiltUp(0, 1, 0, 0.6)
+    expect(p.angle).toBeCloseTo(Math.PI / 2)
+    expect(p.y).toBeCloseTo(0.6) // the base's centre is a radius above the table
+    expect(p.x).toBeCloseTo(0) // right where it lay
+  })
+
+  it('rolls over the rim, and ends standing on its base', () => {
+    const mid = tiltUp(0.5, 1, 0, 0.6)
+    expect(mid.angle).toBeGreaterThan(0)
+    expect(mid.angle).toBeLessThan(Math.PI / 2)
+    expect(mid.y).toBeGreaterThan(0)
+    expect(mid.y).toBeLessThan(0.6)
+    const end = tiltUp(1, 1, 0, 0.6)
+    expect(end.angle).toBeCloseTo(0)
+    expect(end.x).toBeCloseTo(0)
+    expect(end.y).toBeCloseTo(0)
+  })
+
+  it('starts from the slant it actually lies at', () => {
+    const p = tiltUp(0, 1, 0, 0.6, 1.2)
+    expect(p.angle).toBeCloseTo(1.2)
+    expect(p.x).toBeCloseTo(0)
+    expect(p.y).toBeCloseTo(0.6 * Math.sin(1.2))
   })
 })

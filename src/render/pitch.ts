@@ -27,6 +27,8 @@ export function createPitch(): THREE.Mesh {
     c.fillStyle = i % 2 ? '#2b5d57' : '#37736b'
     c.fillRect(X(-L + (2 * L * i) / stripes), Z(-W), (2 * L * PX) / stripes + 1, 2 * W * PX)
   }
+  c.fillStyle = '#2b5d57' // the goal mouths
+  for (const s of [-1, 1]) c.fillRect(X(s < 0 ? -L - GOAL_DEPTH : L), Z(-GOAL_HALF_WIDTH), GOAL_DEPTH * PX, 2 * GOAL_HALF_WIDTH * PX)
   // turf grain
   const img = c.getImageData(0, 0, cv.width, cv.height)
   for (let i = 0; i < img.data.length; i += 4) {

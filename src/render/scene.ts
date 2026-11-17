@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { arrowLength } from '../game/aim'
 import {
-  BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, RAIL_HEIGHT, TABLE_HALF_LENGTH,
+  BASE_RADIUS, BODY_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, RAIL_HEIGHT, TABLE_HALF_LENGTH,
   TABLE_HALF_WIDTH,
 } from '../game/constants'
 import type { PieceSpec, Role, Team } from '../game/types'
@@ -9,7 +9,8 @@ import type { Table } from '../physics/table'
 import { type Animal, type Rig, createAnimal } from './animals'
 import { createBall } from './ball'
 import { framedFocus } from './framing'
-import { FigureMotion, type Mood, applyPose } from './rig'
+import { createGoal } from './goal'
+import { FigureMotion, type Mood, TILT_TIME, applyPose, tiltUp } from './rig'
 import { TOP_HALF_LENGTH, TOP_HALF_WIDTH, createPitch } from './pitch'
 import { HAZE, createRoom } from './room'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
@@ -32,6 +33,8 @@ type PieceView = {
   group: THREE.Group; ring: THREE.MeshStandardMaterial; team: Team
   rig: Rig; motion: FigureMotion; vel: { x: number; z: number }; seen: { x: number; z: number }
   down: boolean // lying on the table: when it is next seen upright, it was stood back up
+  r: number; fall: { x: number; z: number; slant: number; q: THREE.Quaternion } // base radius; how it lies
+  tilting: number | null // when it started rolling back up
 }
 const COIL = 0.4 // lean back (rad) at full pull
 
@@ -119,17 +122,11 @@ export class GameScene {
       const seg = W - GOAL_HALF_WIDTH
       for (const u of [-1, 1]) railBox(s * (L + 0.15), u * (GOAL_HALF_WIDTH + seg / 2), 0.3, seg, -s, 0)
     }
-    // goals: posts, crossbar, back frame in the defending team's colour
-    for (const [s, team] of [[-1, 'cyan'], [1, 'magenta']] as const) {
-      const mat = neon(TEAM_COLOR[team], 1.3)
-      const post = new THREE.CylinderGeometry(0.06, 0.06, GOAL_HEIGHT, 8)
-      for (const u of [-1, 1]) {
-        this.add(post, mat, s * L, GOAL_HEIGHT / 2, u * GOAL_HALF_WIDTH)
-        this.add(post, mat, s * (L + GOAL_DEPTH), GOAL_HEIGHT / 2, u * GOAL_HALF_WIDTH)
-      }
-      this.add(new THREE.BoxGeometry(0.1, 0.1, 2 * GOAL_HALF_WIDTH), mat, s * L, GOAL_HEIGHT, 0)
-      const net = new THREE.MeshBasicMaterial({ color: TEAM_COLOR[team], transparent: true, opacity: 0.12, side: THREE.DoubleSide })
-      this.add(new THREE.PlaneGeometry(2 * GOAL_HALF_WIDTH, GOAL_HEIGHT).rotateY(Math.PI / 2), net, s * (L + GOAL_DEPTH), GOAL_HEIGHT / 2, 0)
+    for (const [sx, team] of [[-1, 'cyan'], [1, 'magenta']] as const) {
+      const goal = createGoal(TEAM_COLOR[team])
+      goal.position.x = sx * L
+      if (sx < 0) goal.rotation.y = Math.PI
+      this.scene.add(goal)
     }
   }
 
@@ -155,7 +152,10 @@ export class GameScene {
     group.userData.id = p.id
     this.scene.add(group)
     const phase = [...p.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 7 // so they don't breathe in step
-    return { group, ring, team: p.team, rig, motion: new FigureMotion(phase), vel: { x: 0, z: 0 }, seen: { x: 0, z: 0 }, down: false }
+    return {
+      group, ring, team: p.team, rig, motion: new FigureMotion(phase), vel: { x: 0, z: 0 }, seen: { x: 0, z: 0 }, down: false,
+      r, fall: { x: 1, z: 0, slant: Math.PI / 2, q: new THREE.Quaternion() }, tilting: null,
+    }
   }
 
   private resize() {
@@ -189,10 +189,28 @@ export class GameScene {
       v.group.quaternion.set(p.qx, p.qy, p.qz, p.qw)
       v.vel = { x: p.vx, z: p.vz }
       const up = 1 - 2 * (p.qx * p.qx + p.qz * p.qz) // cosine of the tilt
-      if (up < 0.7) v.down = true
-      else if (v.down && up > 0.95) { // stood up by the rules (after a stunned turn, or for a kickoff)
+      const now = Math.max(0, this.lastT)
+      if (up < 0.7) {
+        v.down = true
+        this.v3.set(0, 1, 0).applyQuaternion(v.group.quaternion)
+        const m = Math.hypot(this.v3.x, this.v3.z) || 1
+        v.fall = { x: this.v3.x / m, z: this.v3.z / m, slant: Math.acos(Math.min(1, this.v3.y)), q: v.group.quaternion.clone() }
+      } else if (v.down && up > 0.95) { // stood up by the rules (after a stunned turn, or for a kickoff)
         v.down = false
-        v.motion.rise(Math.max(0, this.lastT))
+        v.tilting = now
+        v.motion.rise(now + TILT_TIME) // the figure stays crouched while the base rolls up
+      }
+      if (v.tilting !== null) { // the rules stand it up at once; show it rolling back up over its rim
+        const k = (now - v.tilting) / TILT_TIME
+        if (k >= 1) v.tilting = null
+        else {
+          const tp = tiltUp(k, v.fall.x, v.fall.z, v.r, v.fall.slant)
+          // from the way it lay to upright, turning as it comes (slerp at the same eased pace as the tilt)
+          v.group.quaternion.copy(v.fall.q).slerp(this.qi.set(p.qx, p.qy, p.qz, p.qw), 1 - tp.angle / v.fall.slant)
+          v.group.position.x += tp.x
+          v.group.position.y += tp.y
+          v.group.position.z += tp.z
+        }
       }
       v.ring.emissiveIntensity = id === this.selected ? 1.6 : 0.8
     }

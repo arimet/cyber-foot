@@ -80,6 +80,19 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
 const smooth = (x: number) => x * x * (3 - 2 * x)
 const bump = (k: number, from: number, len: number) => Math.sin(Math.PI * clamp01((k - from) / len)) // 0 -> 1 -> 0
 
+export const TILT_TIME = 0.7 // s to roll the base back upright, before the figure straightens up
+
+// A piece that fell toward (fx, fz) is rolled back up over the rim of its base (radius r): at k = 0 it lies on its
+// side where it fell, at k = 1 it stands where the rules put it, right under that spot. Returns the tilt about the
+// axis (fz, 0, -fx) and where the base's centre is, relative to where it ends up.
+// `from`: the slant it lay at, from the vertical.
+export function tiltUp(k: number, fx: number, fz: number, r: number, from = Math.PI / 2): { angle: number; x: number; y: number; z: number } {
+  const e = smooth(clamp01(k))
+  const angle = from * (1 - e)
+  const out = r * (1 - Math.cos(angle)) - r * (1 - Math.cos(from)) * (1 - e) // round the rim, less the slide to the spot
+  return { angle, x: fx * out, y: r * Math.sin(angle), z: fz * out }
+}
+
 // Back up after a fall: crouched over its knees, eyes on the floor, a beat to gather itself, then it straightens
 // up, stretches a little and shakes the daze off.
 function rising(k: number): { lean: number; squash: number; pitch: number; shake: number } {
