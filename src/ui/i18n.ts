@@ -1,3 +1,5 @@
+import type { DrillKey } from '../game/drills'
+
 export type Lang = 'fr' | 'en'
 const LANG_KEY = 'cyber-foot:lang'
 
@@ -28,6 +30,20 @@ const fr = {
   pro: 'Pro',
   legend: 'Légende',
   rotate: 'Tourne ton téléphone pour jouer',
+  training: 'Entraînement',
+  skip: 'Passer',
+  next: 'Suivant',
+  playMatch: 'Jouer un match',
+  missed: 'Raté, réessaie !',
+  done: 'Réussi !',
+  tipDone: 'Réussi ! Un pion renversé passe le prochain tour de son équipe.',
+  rules: 'Un tir chacun son tour. Le premier à 5 buts gagne.',
+  drill: {
+    empty: 'Tire ton pion en arrière et lâche : plus tu tires, plus il part fort. Marque !',
+    penalty: 'Le gardien couvre un côté : vise le côté ouvert.',
+    lob: 'Un défenseur bloque le tir au sol : choisis Lob pour passer par-dessus.',
+    tip: 'Renverse le chat adverse en fonçant dessus.',
+  } as Record<DrillKey, string>,
 }
 
 const en: typeof fr = {
@@ -51,6 +67,20 @@ const en: typeof fr = {
   pro: 'Pro',
   legend: 'Legend',
   rotate: 'Turn your phone to play',
+  training: 'Training',
+  skip: 'Skip',
+  next: 'Next',
+  playMatch: 'Play a match',
+  missed: 'Missed, try again!',
+  done: 'Done!',
+  tipDone: "Done! A piece knocked over sits out its team's next turn.",
+  rules: 'One shot each, in turn. First to 5 goals wins.',
+  drill: {
+    empty: 'Pull your piece back and let go: the further you pull, the harder it goes. Score!',
+    penalty: 'The keeper covers one side: aim for the open side.',
+    lob: 'A defender blocks shots along the ground: pick Lob to go over him.',
+    tip: "Knock the other team's cat over by running into it.",
+  },
 }
 
 export const DICT: Record<Lang, typeof fr> = { fr, en }

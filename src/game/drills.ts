@@ -18,7 +18,7 @@ export const DRILLS: readonly Drill[] = [
   { key: 'empty', shooter: 'cyan-light1', pieces: fox(2.5), ball: { x: 4.5, z: 0 }, win: 'goal' },
   { key: 'penalty', shooter: 'cyan-light1', pieces: { ...fox(2.5), 'magenta-keeper': { x: 9, z: 0.7 } }, ball: { x: 4.5, z: 0 }, win: 'goal' },
   { key: 'lob', shooter: 'cyan-light1', pieces: { ...fox(0.5), 'magenta-heavy1': { x: 6.5, z: 0 } }, ball: { x: 2.5, z: 0 }, win: 'goal' },
-  { key: 'tip', shooter: 'cyan-light1', pieces: { ...fox(3.5), 'magenta-light1': { x: 6, z: 0 } }, ball: { x: 0, z: -4 }, win: { tip: 'magenta-light1' } },
+  { key: 'tip', shooter: 'cyan-light1', pieces: { ...fox(3.5), 'magenta-light1': { x: 6, z: 0 } }, ball: { x: 4.5, z: -2.5 }, win: { tip: 'magenta-light1' } },
 ]
 
 // Only the drill's pieces on the pitch, upright on their spots, and the ball on its own.

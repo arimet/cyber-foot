@@ -3,6 +3,7 @@ import { audioRunning, isMuted, setMuted, sfx, unlockAudio } from './audio/sfx'
 import { type Level, think } from './game/ai'
 import { aimFromDrag } from './game/aim'
 import { BASE_RADIUS, MAX_TURN_STEPS, PIECES } from './game/constants'
+import { DRILLS, drillMet, setUpDrill } from './game/drills'
 import { Match } from './game/match'
 import { type Shot, type ShotMode, type Team, other } from './game/types'
 import { bindInput } from './input'
@@ -31,6 +32,11 @@ let origin: { x: number; z: number } | null = null
 let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
 let down = new Set<string>() // pieces lying down, to hear new falls
+// Training: the drill under way (DRILLS.length is the closing rules card), instead of the match rules.
+let training: { i: number; done: boolean; missed: boolean } | null = null
+let handDone = false // the ghost hand shows on the first drill until the player first grabs the piece
+const TRAINED_KEY = 'cyber-foot:trained'
+let trained = (() => { try { return localStorage.getItem(TRAINED_KEY) === '1' } catch { return false } })()
 // AI turn: thinking (a generator stepped once per frame), then showing its aim, then shooting.
 // Starting a new game or opening the menu drops both, so a stale AI never shoots into the next game.
 let aiThought: Generator<void, Shot> | null = null
@@ -44,6 +50,14 @@ const hud = createHud(document.getElementById('ui')!, {
   onReplay: () => newGame(opponent),
   onMenu: () => newGame(null),
   onStart: vs => newGame(vs),
+  onTraining() {
+    newGame('human')
+    handDone = false
+    startDrill(0)
+  },
+  onSkip: () => training && startDrill(training.i + 1),
+  onNext: () => training && startDrill(training.i + 1),
+  onPlayMatch: () => newGame('human'),
   onMute() {
     setMuted(!isMuted())
     unlockAudio()
@@ -58,7 +72,10 @@ const hud = createHud(document.getElementById('ui')!, {
 const thinking = () => !!aiThought || !!aiAim
 const refresh = () => {
   scene.setStunned(match.stunned)
-  hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent })
+  hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent,
+    training: training && { key: training.i < DRILLS.length ? DRILLS[training.i].key : 'rules', done: training.done, missed: training.missed },
+    trained,
+  })
 }
 const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_TEAM && !match.winner
@@ -66,6 +83,9 @@ const aiToPlay = () => !!opponent && opponent !== 'human' && match.turn === AI_T
 function newGame(vs: 'human' | Level | null) {
   opponent = vs
   match = new Match(PIECES)
+  training = null
+  table.setBenched(new Set())
+  scene.setBenched(new Set())
   scene.celebrate(null)
   table.reset()
   mode = 'ground'
@@ -76,6 +96,39 @@ function newGame(vs: 'human' | Level | null) {
   clearAim()
   refresh()
 }
+
+// Sets drill i up from scratch, or shows the rules card after the last one.
+function startDrill(i: number) {
+  training = { i, done: false, missed: false }
+  busy = false
+  goal = null
+  clearAim()
+  scene.celebrate(null)
+  if (i < DRILLS.length) {
+    setUpDrill(table, DRILLS[i])
+    scene.setBenched(new Set(PIECES.map(p => p.id).filter(id => !(id in DRILLS[i].pieces))))
+  } else {
+    trained = true
+    try { localStorage.setItem(TRAINED_KEY, '1') } catch { /* private mode: it is only a highlight */ }
+  }
+  refresh()
+}
+
+// The shot of a drill has played out: done, or set up again for another try. The match is left alone.
+function endDrill(goalAgainst: Team | null) {
+  const t = training!, d = DRILLS[t.i]
+  busy = false
+  goal = null
+  if (drillMet(d, { goalAgainst, tipped: table.tippedIds() })) t.done = true
+  else {
+    t.missed = true
+    setUpDrill(table, d)
+  }
+  refresh()
+}
+
+const canShoot = (id: string) =>
+  training ? training.i < DRILLS.length && !training.done && id === DRILLS[training.i].shooter : match.canShoot(id)
 
 function shoot(shot: Shot) {
   table.shoot(shot)
@@ -120,14 +173,15 @@ bindInput(canvas, scene, {
   pick(p, under) {
     if (busy || !opponent || thinking() || aiToPlay()) return null
     // The figure under the pointer first; else the nearest base around the floor point.
-    let best: string | null = under.find(id => match.canShoot(id)) ?? null, bestD = best ? -1 : Infinity
+    let best: string | null = under.find(canShoot) ?? null, bestD = best ? -1 : Infinity
     for (const { id, role } of PIECES) {
-      if (!match.canShoot(id)) continue
+      if (!canShoot(id)) continue
       const pose = table.piecePose(id)
       const d = Math.hypot(pose.x - p.x, pose.z - p.z)
       if (d <= BASE_RADIUS[role] + PICK_SLACK && d < bestD) [best, bestD] = [id, d]
     }
     if (best) {
+      handDone = true
       const pose = table.piecePose(best)
       origin = { x: pose.x, z: pose.z }
       scene.setSelected(best)
@@ -154,6 +208,7 @@ function clearAim() {
 }
 
 function endTurn(goalAgainst: Team | null) {
+  if (training) return endDrill(goalAgainst)
   const out = match.endTurn({ goalAgainst, tipped: table.tippedIds() })
   if (out.winner) {
     sfx.win()
@@ -194,10 +249,12 @@ function frame(now: number) {
     acc -= STEP
   }
   aiFrame(now)
+  const shooter = training?.i === 0 && !handDone && !busy ? table.piecePose(DRILLS[0].shooter) : null
+  hud.hand(shooter && scene.toScreen(shooter.x, shooter.z), shooter ? scene.toScreen(shooter.x - 2, shooter.z) : undefined)
   scene.sync(table)
   scene.render(now / 1000)
   requestAnimationFrame(frame)
 }
 refresh()
 requestAnimationFrame(frame)
-if (import.meta.env.DEV) Object.assign(window, { __game: { table, scene, advance, aiFrame, get match() { return match }, get busy() { return busy } } })
+if (import.meta.env.DEV) Object.assign(window, { __game: { table, scene, advance, aiFrame, frame, get match() { return match }, get busy() { return busy } } })

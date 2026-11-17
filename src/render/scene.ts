@@ -318,6 +318,17 @@ export class GameScene {
     this.stunned = new Set(ids)
   }
 
+  // Pieces off the pitch for a training drill: not drawn.
+  setBenched(ids: ReadonlySet<string>): void {
+    for (const [id, v] of this.views) v.group.visible = !ids.has(id)
+  }
+
+  // Where a table point shows on screen, in CSS pixels.
+  toScreen(x: number, z: number): { x: number; y: number } {
+    const r = this.canvas.getBoundingClientRect(), p = this.v3.set(x, 0, z).project(this.camera)
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height }
+  }
+
   // A goal: the scorers cheer, the others sulk, confetti bursts out of the net and the rails pulse.
   cheer(scorer: Team): void {
     this.mood = { scorer, since: this.lastT }

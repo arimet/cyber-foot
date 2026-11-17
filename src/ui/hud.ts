@@ -1,4 +1,5 @@
 import type { Level } from '../game/ai'
+import type { DrillKey } from '../game/drills'
 import type { ShotMode, Team } from '../game/types'
 import { getLang, setLang, t } from './i18n'
 
@@ -12,6 +13,8 @@ export type HudState = {
   busy: boolean
   thinking: boolean
   menu: boolean
+  training: { key: DrillKey | 'rules'; done: boolean; missed: boolean } | null
+  trained: boolean // finished the training once: its menu button is no longer pushed
 }
 
 const NAME: Record<Team, string> = { cyan: 'Cyan', magenta: 'Magenta' }
@@ -19,7 +22,10 @@ const NAME: Record<Team, string> = { cyan: 'Cyan', magenta: 'Magenta' }
 // Every text comes from the dictionary on each update, so switching language mid-game just needs a refresh.
 export function createHud(
   root: HTMLElement,
-  h: { onToggleMode(): void; onReplay(): void; onMenu(): void; onStart(vs: 'human' | Level): void; onView(): void; onMute(): void },
+  h: {
+    onToggleMode(): void; onReplay(): void; onMenu(): void; onStart(vs: 'human' | Level): void; onView(): void; onMute(): void
+    onTraining(): void; onSkip(): void; onNext(): void; onPlayMatch(): void
+  },
 ) {
   root.innerHTML = `
     <div class="hud-top">
@@ -34,8 +40,12 @@ export function createHud(
     <div class="corner"><button class="lang" type="button"></button><button class="mute" type="button"></button><button class="view" type="button"></button></div>
     <div class="goal-flash" hidden aria-live="polite"><b></b></div>
     <div class="end" hidden><p></p><div class="final"><b class="cyan"></b> – <b class="magenta"></b></div><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
+    <div class="drill" hidden aria-live="polite"><p></p><small></small><div class="row"><button type="button" data-a="skip"></button><button type="button" data-a="next"></button></div></div>
+    <div class="rules" hidden><p></p><div class="row"><button type="button" data-a="play"></button><button type="button" data-a="rules-menu"></button></div></div>
+    <div class="hand" hidden aria-hidden="true">👆</div>
     <div class="menu" hidden>
       <h1>cyber-foot</h1>
+      <button type="button" data-a="training" data-t="training"></button>
       <button type="button" data-vs="human" data-t="twoPlayers"></button>
       <p data-t="vsAi"></p>
       <div class="row">
@@ -63,6 +73,12 @@ export function createHud(
   })
   q('[data-a="replay"]').addEventListener('click', h.onReplay)
   q('[data-a="menu"]').addEventListener('click', h.onMenu)
+  q('[data-a="rules-menu"]').addEventListener('click', h.onMenu)
+  q('[data-a="training"]').addEventListener('click', h.onTraining)
+  q('[data-a="skip"]').addEventListener('click', h.onSkip)
+  q('[data-a="next"]').addEventListener('click', h.onNext)
+  q('[data-a="play"]').addEventListener('click', h.onPlayMatch)
+  const drill = q<HTMLDivElement>('.drill'), rules = q<HTMLDivElement>('.rules'), hand = q<HTMLDivElement>('.hand')
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-vs]'))
     b.addEventListener('click', () => h.onStart(b.dataset.vs as 'human' | Level))
 
@@ -72,7 +88,7 @@ export function createHud(
     for (const el of root.querySelectorAll<HTMLElement>('[data-t]')) el.textContent = d[el.dataset.t as 'rotate'] as string
     for (const team of ['cyan', 'magenta'] as const) q(`[data-s="${team}"]`).textContent = String(s.score[team])
     const turn = q<HTMLDivElement>('.turn')
-    turn.textContent = s.winner || s.menu ? '' : s.thinking ? d.thinking(NAME[s.turn]) : d.toPlay(NAME[s.turn])
+    turn.textContent = s.winner || s.menu || s.training ? '' : s.thinking ? d.thinking(NAME[s.turn]) : d.toPlay(NAME[s.turn])
     turn.className = `turn ${s.turn}`
     // both shots on show, the chosen one lit: a switch, not a label to decode
     q('.shot-label').textContent = d.shot
@@ -92,6 +108,22 @@ export function createHud(
     q('[data-a="menu"]').textContent = d.menu
     menu.hidden = !s.menu
     end.hidden = !s.winner || s.menu
+    q<HTMLElement>('.score').hidden = !!s.training
+    q('[data-a="training"]').classList.toggle('suggested', !s.trained)
+    const tr = s.training
+    drill.hidden = !tr || tr.key === 'rules' || s.menu
+    rules.hidden = !tr || tr.key !== 'rules' || s.menu
+    if (tr && tr.key !== 'rules') {
+      q('.drill p').textContent = d.drill[tr.key]
+      q('.drill small').textContent = tr.done ? (tr.key === 'tip' ? d.tipDone : d.done) : tr.missed ? d.missed : ''
+      q<HTMLButtonElement>('[data-a="skip"]').hidden = tr.done
+      q<HTMLButtonElement>('[data-a="next"]').hidden = !tr.done
+    }
+    q('.rules p').textContent = d.rules
+    q('[data-a="skip"]').textContent = d.skip
+    q('[data-a="next"]').textContent = d.next
+    q('[data-a="play"]').textContent = d.playMatch
+    q('[data-a="rules-menu"]').textContent = d.menu
     if (s.winner) {
       q('.end p').textContent = d.wins(NAME[s.winner])
       q('.final .cyan').textContent = String(s.score.cyan)
@@ -109,5 +141,11 @@ export function createHud(
     void flash.offsetWidth // restart the animation
     flash.classList.add('go')
   }
-  return { update, goal }
+  // The ghost hand: drags from the piece back to the pull point, over and over. null hides it.
+  function showHand(from: { x: number; y: number } | null, to?: { x: number; y: number }) {
+    hand.hidden = !from
+    if (!from || !to) return
+    for (const [k, v] of Object.entries({ x0: from.x, y0: from.y, x1: to.x, y1: to.y })) hand.style.setProperty(`--${k}`, `${v}px`)
+  }
+  return { update, goal, hand: showHand }
 }
