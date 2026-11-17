@@ -36,6 +36,7 @@ let down = new Set<string>() // pieces lying down, to hear new falls
 let training: { i: number; done: boolean; missed: boolean } | null = null
 let handDone = false // the ghost hand shows on the first drill until the player first grabs the piece
 const TRAINED_KEY = 'cyber-foot:trained'
+const DONE_MS = 1200, DONE_LONG_MS = 3500 // how long "Done!" shows before the next drill
 let trained = (() => { try { return localStorage.getItem(TRAINED_KEY) === '1' } catch { return false } })()
 // AI turn: thinking (a generator stepped once per frame), then showing its aim, then shooting.
 // Starting a new game or opening the menu drops both, so a stale AI never shoots into the next game.
@@ -119,7 +120,11 @@ function endDrill(goalAgainst: Team | null) {
   const t = training!, d = DRILLS[t.i]
   busy = false
   goal = null
-  if (drillMet(d, { goalAgainst, tipped: table.tippedIds() })) t.done = true
+  if (drillMet(d, { goalAgainst, tipped: table.tippedIds() })) {
+    t.done = true
+    // on to the next drill by itself, once "Done!" has been read (the tip drill's line is longer)
+    setTimeout(() => { if (training === t) startDrill(t.i + 1) }, d.key === 'tip' ? DONE_LONG_MS : DONE_MS)
+  }
   else {
     t.missed = true
     setUpDrill(table, d)
