@@ -33,6 +33,7 @@ export const MIN_PULL = 0.3
 export const MAX_PULL = 3
 
 export const GOALS_TO_WIN = 5
+export const MAX_PASSES = 3 // per turn: the shot after the third pass is the last
 
 const SLOTS: { slot: string; role: Role; x: number; z: number }[] = [
   { slot: 'keeper', role: 'keeper', x: -8.5, z: 0 },

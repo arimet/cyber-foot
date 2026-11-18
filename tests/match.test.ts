@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GOALS_TO_WIN, PIECES } from '../src/game/constants'
+import { GOALS_TO_WIN, MAX_PASSES, PIECES } from '../src/game/constants'
 import { Match } from '../src/game/match'
 
 const quiet = { goalAgainst: null, tipped: [] as string[] }
@@ -92,5 +92,39 @@ describe('Match', () => {
     const out = m.endTurn({ goalAgainst: null, tipped: PIECES.map(p => p.id) })
     expect(out.passed.length).toBeGreaterThan(0)
     expect(PIECES.some(p => m.canShoot(p.id))).toBe(true)
+  })
+
+  it('a pass caught by a teammate gives the same team another shot, with that piece only', () => {
+    const m = new Match(PIECES)
+    m.endTurn({ ...quiet, captured: 'cyan-light2' })
+    expect(m.turn).toBe('cyan')
+    expect(m.receiver).toBe('cyan-light2')
+    expect(m.canShoot('cyan-light2')).toBe(true)
+    expect(m.canShoot('cyan-light1')).toBe(false)
+  })
+
+  it('an interception ends the turn', () => {
+    const m = new Match(PIECES)
+    m.endTurn({ ...quiet, captured: 'magenta-heavy1' })
+    expect(m.turn).toBe('magenta')
+    expect(m.receiver).toBeNull()
+    expect(m.canShoot('magenta-light1')).toBe(true)
+  })
+
+  it('after MAX_PASSES passes the next catch ends the turn', () => {
+    const m = new Match(PIECES)
+    for (let i = 0; i < MAX_PASSES; i++) m.endTurn({ ...quiet, captured: i % 2 ? 'cyan-light1' : 'cyan-light2' })
+    expect(m.passes).toBe(MAX_PASSES)
+    m.endTurn({ ...quiet, captured: 'cyan-heavy1' })
+    expect(m.turn).toBe('magenta')
+    expect(m.passes).toBe(0)
+  })
+
+  it('a piece knocked over during a pass still sits out its next turn', () => {
+    const m = new Match(PIECES)
+    m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'], captured: 'cyan-light2' })
+    m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'] }) // cyan's turn ends, the heavy still lying
+    m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'] }) // magenta's
+    expect(m.canShoot('cyan-heavy1')).toBe(false)
   })
 })

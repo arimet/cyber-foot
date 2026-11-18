@@ -1,4 +1,4 @@
-import { GOALS_TO_WIN } from './constants'
+import { GOALS_TO_WIN, MAX_PASSES } from './constants'
 import { other, type PieceSpec, type Team } from './types'
 
 export type TurnOutcome = { kickoff: boolean; standUp: string[]; passed: Team[]; winner: Team | null }
@@ -8,6 +8,8 @@ export class Match {
   score: Record<Team, number> = { cyan: 0, magenta: 0 }
   turn: Team = 'cyan'
   winner: Team | null = null
+  receiver: string | null = null // caught a pass: the only piece that may play the turn's next shot
+  passes = 0 // passes made this turn
   private readonly down = new Set<string>()
   private readonly teamOf: Map<string, Team>
 
@@ -20,10 +22,20 @@ export class Match {
   }
 
   canShoot(id: string): boolean {
-    return !this.winner && this.teamOf.get(id) === this.turn && !this.down.has(id)
+    return !this.winner && this.teamOf.get(id) === this.turn && !this.down.has(id) && (!this.receiver || id === this.receiver)
   }
 
-  endTurn(r: { goalAgainst: Team | null; tipped: string[] }): TurnOutcome {
+  // `captured`: the piece that caught the ball, if any. A teammate catching it is a pass: the same team plays again,
+  // with that piece, and pieces knocked over meanwhile are dealt with when the turn really ends.
+  endTurn(r: { goalAgainst: Team | null; tipped: string[]; captured?: string | null }): TurnOutcome {
+    const c = r.captured
+    if (!r.goalAgainst && c && this.teamOf.get(c) === this.turn && this.passes < MAX_PASSES && !r.tipped.includes(c)) {
+      this.passes++
+      this.receiver = c
+      return { kickoff: false, standUp: [], passed: [], winner: null }
+    }
+    this.passes = 0
+    this.receiver = null
     if (r.goalAgainst) {
       const scorer = other(r.goalAgainst)
       this.score[scorer]++
