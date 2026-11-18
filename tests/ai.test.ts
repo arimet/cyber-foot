@@ -45,6 +45,12 @@ describe('AI', () => {
     expect(scoreOutcome(table, 'magenta', 'magenta', [], ball)).toBeLessThan(-500)
   })
 
+  it('scoreOutcome likes a pass caught by a teammate and dislikes an interception', () => {
+    const ball = table.ballPose(), plain = scoreOutcome(table, null, 'magenta', [], ball)
+    expect(scoreOutcome(table, null, 'magenta', [], ball, 'magenta-light2')).toBeGreaterThan(plain)
+    expect(scoreOutcome(table, null, 'magenta', [], ball, 'cyan-light2')).toBeLessThan(plain)
+  })
+
   it('legend scores an open goal', () => {
     openGoal()
     const shot = runThink(think(table, magenta, 'magenta', 'legend', () => 0.5))

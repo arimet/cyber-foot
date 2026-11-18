@@ -17,6 +17,9 @@ const OFFSETS_DEG = [0, 4, -4, 8, -8]
 const POWERS = [0.7, 0.95, 0.45]
 const LOB_POWERS = [0.7, 0.95]
 const SHOOTERS = 3 // only the pieces nearest the ball
+// A caught pass is another shot; an interception hands the ball over. ponytail: blind to the passes left this turn.
+const PASS_BONUS = 12
+const INTERCEPTED = 10
 
 // The goal a team attacks: cyan defends -x.
 const attackX = (me: Team) => (me === 'cyan' ? TABLE_HALF_LENGTH : -TABLE_HALF_LENGTH)
@@ -53,7 +56,9 @@ export function candidates(table: Table, canShoot: (id: string) => boolean, me: 
 }
 
 // How good the table looks for `me` after a simulated shot.
-export function scoreOutcome(table: Table, goalAgainst: Team | null, me: Team, tippedBefore: string[], ballBefore: Pose): number {
+export function scoreOutcome(
+  table: Table, goalAgainst: Team | null, me: Team, tippedBefore: string[], ballBefore: Pose, captured: string | null = null,
+): number {
   if (goalAgainst) return goalAgainst === me ? -1000 : 1000
   const ball = table.ballPose()
   const gx = attackX(me)
@@ -64,6 +69,7 @@ export function scoreOutcome(table: Table, goalAgainst: Team | null, me: Team, t
     if (tippedBefore.includes(id)) continue
     s += id.startsWith(me) ? -6 : 8
   }
+  if (captured) s += captured.startsWith(me) ? PASS_BONUS : -INTERCEPTED
   return s
 }
 
@@ -87,8 +93,8 @@ export function* think(
   for (let i = 0; i < list.length; i++) {
     const sim = table.clone()
     sim.shoot(list[i])
-    const { goalAgainst } = sim.runTurn(AI_HORIZON)
-    const s = scoreOutcome(sim, goalAgainst, me, tippedBefore, ballBefore)
+    const { goalAgainst, captured } = sim.runTurn(AI_HORIZON)
+    const s = scoreOutcome(sim, goalAgainst, me, tippedBefore, ballBefore, captured)
     sim.free()
     if (s > bestScore) [best, bestScore] = [list[i], s]
     if (i + 1 >= MIN_CANDIDATES && now() - start > BUDGET_MS) break
