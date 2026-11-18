@@ -15,7 +15,7 @@ export type HudState = {
   thinking: boolean
   passes: number // passes made this turn: the turn goes on
   menu: boolean
-  training: { key: DrillKey | 'rules'; done: boolean; missed: boolean } | null
+  training: { key: DrillKey | 'rules'; done: boolean; missed: boolean; passed: boolean } | null
   trained: boolean // finished the training once: its menu button is no longer pushed
 }
 
@@ -119,7 +119,7 @@ export function createHud(
     rules.hidden = !tr || tr.key !== 'rules' || s.menu
     if (tr && tr.key !== 'rules') {
       q('.drill p').textContent = d.drill[tr.key]
-      q('.drill small').textContent = tr.done ? (tr.key === 'tip' ? d.tipDone : d.done) : tr.missed ? d.missed : ''
+      q('.drill small').textContent = tr.done ? (tr.key === 'tip' ? d.tipDone : d.done) : tr.passed ? d.passCaught : tr.missed ? d.missed : ''
       q<HTMLButtonElement>('[data-a="skip"]').hidden = tr.done
       q<HTMLButtonElement>('[data-a="next"]').hidden = !tr.done
     }

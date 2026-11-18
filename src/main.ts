@@ -33,7 +33,7 @@ let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
 let down = new Set<string>() // pieces lying down, to hear new falls
 // Training: the drill under way (DRILLS.length is the closing rules card), instead of the match rules.
-let training: { i: number; done: boolean; missed: boolean } | null = null
+let training: { i: number; done: boolean; missed: boolean; shooter: string; passes: number } | null = null
 let handDone = false // the ghost hand shows on the first drill until the player first grabs the piece
 const TRAINED_KEY = 'cyber-foot:trained'
 const DONE_MS = 1200, DONE_LONG_MS = 3500 // how long "Done!" shows before the next drill
@@ -73,10 +73,12 @@ const hud = createHud(document.getElementById('ui')!, {
 const thinking = () => !!aiThought || !!aiAim
 const refresh = () => {
   scene.setStunned(match.stunned)
-  scene.setReceiver(training ? null : match.receiver)
+  scene.setReceiver(training ? (training.passes ? training.shooter : null) : match.receiver)
   hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent,
     passes: match.passes,
-    training: training && { key: training.i < DRILLS.length ? DRILLS[training.i].key : 'rules', done: training.done, missed: training.missed },
+    training: training && {
+      key: training.i < DRILLS.length ? DRILLS[training.i].key : 'rules', done: training.done, missed: training.missed, passed: training.passes > 0,
+    },
     trained,
   })
 }
@@ -102,7 +104,7 @@ function newGame(vs: 'human' | Level | null) {
 
 // Sets drill i up from scratch, or shows the rules card after the last one.
 function startDrill(i: number) {
-  training = { i, done: false, missed: false }
+  training = { i, done: false, missed: false, shooter: DRILLS[i]?.shooter ?? '', passes: 0 }
   busy = false
   goal = null
   clearAim()
@@ -122,20 +124,27 @@ function endDrill(goalAgainst: Team | null) {
   const t = training!, d = DRILLS[t.i]
   busy = false
   goal = null
-  if (drillMet(d, { goalAgainst, tipped: table.tippedIds() })) {
+  const caught = table.capturedBy
+  if (!goalAgainst && caught?.startsWith('cyan')) { // a pass: play on with the catcher
+    t.shooter = caught
+    t.passes++
+  }
+  else if (drillMet(d, { goalAgainst, tipped: table.tippedIds(), passes: t.passes })) {
     t.done = true
     // on to the next drill by itself, once "Done!" has been read (the tip drill's line is longer)
     setTimeout(() => { if (training === t) startDrill(t.i + 1) }, d.key === 'tip' ? DONE_LONG_MS : DONE_MS)
   }
   else {
     t.missed = true
+    t.shooter = d.shooter
+    t.passes = 0
     setUpDrill(table, d)
   }
   refresh()
 }
 
 const canShoot = (id: string) =>
-  training ? training.i < DRILLS.length && !training.done && id === DRILLS[training.i].shooter : match.canShoot(id)
+  training ? training.i < DRILLS.length && !training.done && id === training.shooter : match.canShoot(id)
 
 function shoot(shot: Shot) {
   table.shoot(shot)

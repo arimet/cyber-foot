@@ -3,14 +3,25 @@ import { DRILLS, type Drill, drillMet, setUpDrill } from '../src/game/drills'
 import type { ShotMode } from '../src/game/types'
 import { Table } from '../src/physics/table'
 
-const [empty, penalty, lob, tip] = DRILLS
+const [empty, penalty, lob, pass, tip] = DRILLS
 
 const fire = async (d: Drill, angle: number, power: number, mode: ShotMode = 'ground') => {
   const t = await Table.create()
   setUpDrill(t, d)
   t.shoot({ pieceId: d.shooter, dirX: Math.cos(angle), dirZ: Math.sin(angle), power, mode })
   const r = t.runTurn()
-  return drillMet(d, { goalAgainst: r.goalAgainst, tipped: t.tippedIds() })
+  return drillMet(d, { goalAgainst: r.goalAgainst, tipped: t.tippedIds(), passes: 0 })
+}
+
+// The fox passes; if the cat catches it, the cat shoots straight at the goal's middle.
+const passThenShoot = async (angle: number, power: number) => {
+  const t = await Table.create()
+  setUpDrill(t, pass)
+  t.shoot({ pieceId: pass.shooter, dirX: Math.cos(angle), dirZ: Math.sin(angle), power, mode: 'ground' })
+  if (t.runTurn().captured !== 'cyan-light2') return false
+  const c = t.piecePose('cyan-light2'), d = Math.hypot(10 - c.x, c.z)
+  t.shoot({ pieceId: 'cyan-light2', dirX: (10 - c.x) / d, dirZ: -c.z / d, power: 0.8, mode: 'ground' })
+  return drillMet(pass, { goalAgainst: t.runTurn().goalAgainst, tipped: t.tippedIds(), passes: 1 })
 }
 
 // some shot among these angles (rad) and powers meets the drill
@@ -35,12 +46,23 @@ describe('drills', () => {
     expect(await anyMeets(lob, [0], range(0.4, 1, 7), 'lob')).toBe(true)
   })
 
+  it('the pass drill: a pass caught by the cat, then its shot scores', async () => {
+    const aim = Math.atan2(pass.ball.z - pass.pieces[pass.shooter].z, pass.ball.x - pass.pieces[pass.shooter].x)
+    let met = false
+    for (const a of range(aim - 0.1, aim + 0.1, 5)) for (const p of range(0.25, 0.6, 8)) if (!met) met = await passThenShoot(a, p)
+    expect(met).toBe(true)
+  })
+
+  it('the pass drill needs a pass: a goal straight from the fox does not count', () => {
+    expect(drillMet(pass, { goalAgainst: 'magenta', tipped: [], passes: 0 })).toBe(false)
+  })
+
   it('the tip drill is met when the target falls', async () => {
     expect(await fire(tip, 0, 1)).toBe(true)
   })
 
   it('an own goal is a miss', () => {
-    expect(drillMet(empty, { goalAgainst: 'cyan', tipped: [] })).toBe(false)
+    expect(drillMet(empty, { goalAgainst: 'cyan', tipped: [], passes: 0 })).toBe(false)
   })
 
   it('a shot that misses the ball is a miss', async () => {
