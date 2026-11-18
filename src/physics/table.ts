@@ -36,6 +36,14 @@ const FALL_SPIN_DAMPING = 0.3
 const LYING_DAMPING = 3 // a figure lying on its side scrapes to a halt (friction would trip it over its head)
 const FALLEN_BASE_SHARE = 0.4 // a knocked piece loses its weighted base's pull, or it would rock back up like a weeble
 const LAID_COS = 0.2 // past ~78° the piece is down: heavy spin damping, so it never cartwheels back up
+// Magnetic control: a standing piece catches a ball rolling by slowly enough, within CAPTURE_GAP of its base, and
+// draws it to its feet. A hard shot goes through; a lob in the air too. The shooter never catches its own shot, nor
+// does a piece the ball starts beside, until the ball has left it once, nor one the ball bounced off (a deflection).
+const CAPTURE_GAP = 0.5
+const CAPTURE_SPEED = 5
+const CAPTURE_HEIGHT = BALL_RADIUS + 0.05 // rolling on the floor, not bouncing
+const STILL_PIECE = 1 // a piece moving faster than this is not set to receive
+const HOLD_PULL = 12 // how fast the ball is drawn in to the feet, per unit of distance
 
 // Collision groups: the curved ramp along the rails only meets the ball; pieces stop at a straight wall a little in
 // front of it instead, since a flat base riding up a curve would tip.
@@ -60,6 +68,10 @@ export class Table {
   private floorCollider = -1
   private benched: ReadonlySet<string> = new Set() // off the pitch: no body in play
   private ballPre = { x: 0, y: 0, z: 0 }
+  private shooter: string | null = null // the piece that played the turn's shot: magnetism is on from then
+  private armed = new Set<string>() // pieces the ball has been away from since the shot: they may catch it
+  private deflected = new Set<string>() // pieces the ball bounced off since the shot: they may not
+  private captured: string | null = null // the piece that caught the ball this turn
 
   static async create(): Promise<Table> {
     await (ready ??= RAPIER.init())
@@ -185,6 +197,8 @@ export class Table {
     this.placeBall(0, BALL_RADIUS, 0)
     this.goalReported = false
     this.lob = null
+    this.shooter = null
+    this.captured = null
   }
 
   // Takes the listed pieces off the pitch (back on their kickoff spot, body disabled) and brings every other one back.
@@ -230,10 +244,62 @@ export class Table {
     this.calm = 0
     this.goalReported = false
     this.lob = shot.mode === 'lob' ? { id: shot.pieceId, dirX: shot.dirX, dirZ: shot.dirZ } : null
+    this.shooter = shot.pieceId
+    this.captured = null
+    this.deflected.clear()
+    const t = this.ball.translation()
+    this.armed = new Set(this.pieces.filter(p => !this.benched.has(p.id) && this.ballGap(p.id, t) > CAPTURE_GAP).map(p => p.id))
+  }
+
+  // How far the ball's edge is from the piece's base.
+  private ballGap(id: string, t: { x: number; z: number }): number {
+    const o = this.body(id).translation()
+    return Math.hypot(t.x - o.x, t.z - o.z) - BASE_RADIUS[this.role(id)] - BALL_RADIUS
+  }
+
+  // The piece that caught the ball since the last shot, if any.
+  get capturedBy(): string | null {
+    return this.captured
+  }
+
+  // Catches the ball at the first armed piece it rolls by slowly, then keeps it drawn in to that piece's feet.
+  private magnet(): string | null {
+    if (!this.shooter || this.goalReported) return null
+    const t = this.ball.translation()
+    if (this.captured) {
+      this.hold(this.captured, t)
+      return null
+    }
+    const v = this.ball.linvel()
+    const slow = Math.hypot(v.x, v.z) < CAPTURE_SPEED && t.y < CAPTURE_HEIGHT
+    for (const p of this.pieces) {
+      if (p.id === this.shooter || this.benched.has(p.id)) continue
+      const gap = this.ballGap(p.id, t)
+      if (gap > CAPTURE_GAP) {
+        this.armed.add(p.id)
+        continue
+      }
+      const pv = this.body(p.id).linvel()
+      if (!slow || !this.armed.has(p.id) || this.deflected.has(p.id) || this.isTipped(p.id) || Math.hypot(pv.x, pv.z) > STILL_PIECE) continue
+      this.captured = p.id
+      this.hold(p.id, t)
+      return p.id
+    }
+    return null
+  }
+
+  // Draws the ball to the piece's feet, on the side it came from; it stops there.
+  private hold(id: string, t: { x: number; z: number }) {
+    const o = this.body(id).translation()
+    const dx = t.x - o.x, dz = t.z - o.z, d = Math.hypot(dx, dz) || 1
+    const touch = BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.03
+    const k = HOLD_PULL * (touch - d) // a fifth of the way per step: no overshoot
+    this.ball.setLinvel({ x: (dx / d) * k, y: Math.min(0, this.ball.linvel().y), z: (dz / d) * k }, true)
+    this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 
   // One fixed step. Reports a goal once per turn, and the contacts that started, with their impact speed.
-  step(): { goalAgainst: Team | null; contacts: Contact[] } {
+  step(): { goalAgainst: Team | null; contacts: Contact[]; captured: string | null } {
     for (const [id, b] of this.bodies) {
       const v = b.linvel()
       this.preStep.set(id, { x: v.x, z: v.z })
@@ -265,6 +331,7 @@ export class Table {
       if (isBall && piece) {
         const pv = this.preStep.get(piece)!
         report('ball', Math.hypot(bp.x - pv.x, bp.y, bp.z - pv.z))
+        this.deflected.add(piece)
         if (this.lob && piece === this.lob.id) this.liftBall()
       } else if (isBall) {
         // the floor makes the ball bounce, everything else is a rail
@@ -286,7 +353,8 @@ export class Table {
     }
     const goalAgainst = this.goalReported ? null : this.ballInGoal()
     if (goalAgainst) this.goalReported = true
-    return { goalAgainst, contacts }
+    const captured = this.magnet()
+    return { goalAgainst, contacts, captured }
   }
 
   private allQuiet(): boolean {
@@ -411,12 +479,12 @@ export class Table {
     return this.calm >= SETTLE_STEPS
   }
 
-  runTurn(maxSteps = MAX_TURN_STEPS): { goalAgainst: Team | null; steps: number } {
+  runTurn(maxSteps = MAX_TURN_STEPS): { goalAgainst: Team | null; steps: number; captured: string | null } {
     for (let steps = 1; steps <= maxSteps; steps++) {
       const { goalAgainst } = this.step()
-      if (goalAgainst || this.isSettled()) return { goalAgainst, steps }
+      if (goalAgainst || this.isSettled()) return { goalAgainst, steps, captured: this.captured }
     }
-    return { goalAgainst: null, steps: maxSteps }
+    return { goalAgainst: null, steps: maxSteps, captured: this.captured }
   }
 
   private static pose(b: RAPIER.RigidBody): Pose {

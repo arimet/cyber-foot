@@ -354,3 +354,36 @@ describe('contacts', () => {
     expect(table.ballPose().x).toBeLessThan(k.x)
   })
 })
+
+describe('magnetic control', () => {
+  // Only the passer (cyan-light1) and the receiver (cyan-light2) on the pitch, the ball between them.
+  const pitch = async () => {
+    const t = await Table.create()
+    t.setBenched(new Set(PIECES.map(p => p.id).filter(id => id !== 'cyan-light1' && id !== 'cyan-light2')))
+    t.placePiece('cyan-light1', -2, 0)
+    t.placePiece('cyan-light2', 4, 0)
+    t.placeBall(-1, BALL_RADIUS, 0)
+    return t
+  }
+  const reach = BASE_RADIUS.light + BALL_RADIUS
+
+  it('a soft pass is caught at the feet of a teammate', async () => {
+    const t = await pitch()
+    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.35, mode: 'ground' })
+    expect(t.runTurn().captured).toBe('cyan-light2')
+    expect(dist(t.ballPose(), t.piecePose('cyan-light2'))).toBeLessThan(reach + 0.1)
+  })
+
+  it('a hard shot is not caught', async () => {
+    const t = await pitch()
+    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    expect(t.runTurn().captured).toBeNull()
+  })
+
+  it('a piece already at the ball when the shot starts does not catch it', async () => {
+    const t = await pitch()
+    t.placeBall(4 - reach - 0.2, BALL_RADIUS, 0) // resting by the receiver
+    t.shoot({ pieceId: 'cyan-light1', dirX: -1, dirZ: 0, power: 0.3, mode: 'ground' }) // the shooter runs off the other way
+    expect(t.runTurn().captured).toBeNull()
+  })
+})
