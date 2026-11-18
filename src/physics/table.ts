@@ -43,7 +43,8 @@ const CAPTURE_GAP = 0.5
 const CAPTURE_SPEED = 5
 const CAPTURE_HEIGHT = BALL_RADIUS + 0.05 // rolling on the floor, not bouncing
 const STILL_PIECE = 1 // a piece moving faster than this is not set to receive
-const HOLD_PULL = 12 // how fast the ball is drawn in to the feet, per unit of distance
+const HOLD_IN = 0.2 // share of the way in to the feet the ball goes each step
+const HOLD_TURN = 0.15 // radians round the base per step: half a turn in a third of a second
 
 // Collision groups: the curved ramp along the rails only meets the ball; pieces stop at a straight wall a little in
 // front of it instead, since a flat base riding up a curve would tip.
@@ -288,13 +289,19 @@ export class Table {
     return null
   }
 
-  // Draws the ball to the piece's feet, on the side it came from; it stops there.
+  // Draws the ball in to the piece's feet and round it, hugging the base, to the side facing the goal its team
+  // attacks: the catcher can shoot on at once. It stops there.
   private hold(id: string, t: { x: number; z: number }) {
     const o = this.body(id).translation()
-    const dx = t.x - o.x, dz = t.z - o.z, d = Math.hypot(dx, dz) || 1
-    const touch = BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.03
-    const k = HOLD_PULL * (touch - d) // a fifth of the way per step: no overshoot
-    this.ball.setLinvel({ x: (dx / d) * k, y: Math.min(0, this.ball.linvel().y), z: (dz / d) * k }, true)
+    const team = this.pieces.find(p => p.id === id)!.team
+    const gx = team === 'cyan' ? TABLE_HALF_LENGTH : -TABLE_HALF_LENGTH
+    const a = Math.atan2(t.z - o.z, t.x - o.x), goal = Math.atan2(-o.z, gx - o.x)
+    const turn = Math.atan2(Math.sin(goal - a), Math.cos(goal - a)) // shortest way round, in (-pi, pi]
+    const next = a + Math.max(-HOLD_TURN, Math.min(HOLD_TURN, turn))
+    const d = Math.hypot(t.x - o.x, t.z - o.z)
+    const r = d + (BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.03 - d) * HOLD_IN
+    const fps = 60 // the fixed step: the velocity that lands the ball on the next point
+    this.ball.setLinvel({ x: (o.x + r * Math.cos(next) - t.x) * fps, y: Math.min(0, this.ball.linvel().y), z: (o.z + r * Math.sin(next) - t.z) * fps }, true)
     this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 

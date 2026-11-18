@@ -374,6 +374,15 @@ describe('magnetic control', () => {
     expect(dist(t.ballPose(), t.piecePose('cyan-light2'))).toBeLessThan(reach + 0.1)
   })
 
+  it('a caught ball is drawn round to the side of the goal the catcher attacks', async () => {
+    const t = await pitch()
+    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.35, mode: 'ground' }) // forward: the ball reaches the catcher from behind
+    expect(t.runTurn().captured).toBe('cyan-light2')
+    const b = t.ballPose(), p = t.piecePose('cyan-light2')
+    expect(b.x - p.x).toBeGreaterThan(reach - 0.1) // in front, toward magenta's goal at +x
+    expect(Math.abs(b.z - p.z)).toBeLessThan(0.2)
+  })
+
   it('a hard shot is not caught', async () => {
     const t = await pitch()
     t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
