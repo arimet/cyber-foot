@@ -73,7 +73,9 @@ const hud = createHud(document.getElementById('ui')!, {
 const thinking = () => !!aiThought || !!aiAim
 const refresh = () => {
   scene.setStunned(match.stunned)
+  scene.setReceiver(training ? null : match.receiver)
   hud.update({ muted: isMuted(), close, score: match.score, turn: match.turn, mode, winner: match.winner, busy, thinking: thinking(), menu: !opponent,
+    passes: match.passes,
     training: training && { key: training.i < DRILLS.length ? DRILLS[training.i].key : 'rules', done: training.done, missed: training.missed },
     trained,
   })
@@ -214,7 +216,7 @@ function clearAim() {
 
 function endTurn(goalAgainst: Team | null) {
   if (training) return endDrill(goalAgainst)
-  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds() })
+  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds(), captured: table.capturedBy })
   if (out.winner) {
     sfx.win()
     scene.celebrate(out.winner)
@@ -230,6 +232,7 @@ function advance() {
   const r = table.step()
   steps++
   for (const c of r.contacts) sfx[c.kind === 'piece' ? 'hit' : c.kind](c.strength)
+  if (r.captured) sfx.catch()
   for (const id of table.tippedIds()) if (!down.has(id)) {
     down.add(id)
     sfx.tip()

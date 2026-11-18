@@ -91,6 +91,8 @@ export const sfx = {
   win() {
     ;[523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.24, 0.2, i * 0.13))
   },
+  // magnetic "zip": a piece catches the ball
+  catch: () => tone('sine', 300, 1200, 0.16, 0.14),
   // falling "bloop" when a figure goes down
   tip: () => tone('sine', 520, 140, 0.3, 0.2),
 }

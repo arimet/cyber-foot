@@ -58,6 +58,7 @@ export class GameScene {
   private readonly ray = new THREE.Raycaster()
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private selected: string | null = null
+  private receiver: string | null = null // caught a pass: its ring pulses, it plays next
   private readonly room = createRoom()
   private fitDist = 30 // camera distance that frames the whole table
   private zoomTarget = CLOSE_ZOOM
@@ -244,7 +245,7 @@ export class GameScene {
           v.group.position.z += tp.z
         }
       }
-      v.ring.emissiveIntensity = id === this.selected ? 1.6 : 0.8
+      v.ring.emissiveIntensity = id === this.selected ? 1.6 : id === this.receiver ? 1.2 + 0.6 * Math.sin(now * 8) : 0.8
     }
     const b = table.ballPose()
     this.zoom += ((this.party ? 1 : this.zoomTarget) - this.zoom) * CAMERA_EASE // a won match: the whole table
@@ -311,6 +312,10 @@ export class GameScene {
 
   setSelected(id: string | null): void {
     this.selected = id
+  }
+
+  setReceiver(id: string | null): void {
+    this.receiver = id
   }
 
   // Pieces lying stunned, and the team that just scored (the other one sulks).

@@ -1,5 +1,6 @@
 import type { Level } from '../game/ai'
 import type { DrillKey } from '../game/drills'
+import { MAX_PASSES } from '../game/constants'
 import type { ShotMode, Team } from '../game/types'
 import { getLang, setLang, t } from './i18n'
 
@@ -12,6 +13,7 @@ export type HudState = {
   winner: Team | null
   busy: boolean
   thinking: boolean
+  passes: number // passes made this turn: the turn goes on
   menu: boolean
   training: { key: DrillKey | 'rules'; done: boolean; missed: boolean } | null
   trained: boolean // finished the training once: its menu button is no longer pushed
@@ -89,7 +91,8 @@ export function createHud(
     for (const el of root.querySelectorAll<HTMLElement>('[data-t]')) el.textContent = d[el.dataset.t as 'rotate'] as string
     for (const team of ['cyan', 'magenta'] as const) q(`[data-s="${team}"]`).textContent = String(s.score[team])
     const turn = q<HTMLDivElement>('.turn')
-    turn.textContent = s.winner || s.menu || s.training ? '' : s.thinking ? d.thinking(NAME[s.turn]) : d.toPlay(NAME[s.turn])
+    turn.textContent = s.winner || s.menu || s.training ? '' : s.thinking ? d.thinking(NAME[s.turn])
+      : s.passes ? d.passTurn(NAME[s.turn], s.passes, MAX_PASSES) : d.toPlay(NAME[s.turn])
     turn.className = `turn ${s.turn}`
     // both shots on show, the chosen one lit: a switch, not a label to decode
     q('.shot-label').textContent = d.shot
