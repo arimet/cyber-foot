@@ -19,6 +19,7 @@ const AFTER_GOAL_STEPS = 150 // 2.5 s of celebration before the kickoff reset
 const PICK_SLACK = 0.25 // fingers are wider than the base
 const AI_TEAM: Team = 'magenta'
 const AI_AIM_MS = 700 // the AI shows its aim before shooting
+const HELD_TURN = 0.25 // rad per frame a held ball turns round its holder to follow the aim
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement
 const table = await Table.create()
@@ -29,6 +30,7 @@ let busy = false
 let steps = 0
 let goal: { against: Team; left: number } | null = null
 let origin: { x: number; z: number } | null = null
+let aiming: { id: string; dirX: number; dirZ: number } | null = null // the player's aim under way, if any
 let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
 let down = new Set<string>() // pieces lying down, to hear new falls
@@ -206,6 +208,7 @@ bindInput(canvas, scene, {
   },
   aim(id, p) {
     const a = origin && aimFromDrag(origin, p)
+    aiming = a && { id, dirX: a.dirX, dirZ: a.dirZ }
     scene.setAim(a ? origin : null, a?.dirX ?? 0, a?.dirZ ?? 0, a?.power ?? 0, roleOf(id))
   },
   release(id, p) {
@@ -219,6 +222,7 @@ bindInput(canvas, scene, {
 
 function clearAim() {
   origin = null
+  aiming = null
   scene.setSelected(null)
   scene.setAim(null, 0, 0, 0, 'light')
 }
@@ -266,6 +270,8 @@ function frame(now: number) {
     acc -= STEP
   }
   aiFrame(now)
+  const held = aiming ?? (aiAim && { id: aiAim.shot.pieceId, dirX: aiAim.shot.dirX, dirZ: aiAim.shot.dirZ })
+  if (held && !busy) table.aimHold(held.id, held.dirX, held.dirZ, HELD_TURN)
   const shooter = training?.i === 0 && !handDone && !busy ? table.piecePose(DRILLS[0].shooter) : null
   hud.hand(shooter && scene.toScreen(shooter.x, shooter.z), shooter ? scene.toScreen(shooter.x - 2, shooter.z) : undefined)
   scene.sync(table)

@@ -266,6 +266,18 @@ export class Table {
     this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 
+  // While the holder aims, its ball turns round the base toward the aimed side, at most maxTurn rad per call
+  // (one call per frame), so the kick then leaves from where the ball already is. Other pieces leave it alone.
+  aimHold(id: string, dirX: number, dirZ: number, maxTurn: number): void {
+    if (id !== this.captured) return
+    const o = this.body(id).translation(), t = this.ball.translation()
+    const a = Math.atan2(t.z - o.z, t.x - o.x)
+    const turn = Math.atan2(dirZ, dirX) - a, d = Math.atan2(Math.sin(turn), Math.cos(turn)) // shortest way round
+    const next = a + Math.max(-maxTurn, Math.min(maxTurn, d)), r = BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.02
+    this.ball.setTranslation({ x: o.x + r * Math.cos(next), y: BALL_RADIUS, z: o.z + r * Math.sin(next) }, true)
+    this.ball.setLinvel({ x: 0, y: 0, z: 0 }, true)
+  }
+
   // How far the ball's edge is from the piece's base.
   private ballGap(id: string, t: { x: number; z: number }): number {
     const o = this.body(id).translation()

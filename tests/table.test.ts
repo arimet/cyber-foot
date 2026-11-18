@@ -416,6 +416,30 @@ describe('magnetic control', () => {
     expect(top).toBeGreaterThan(BALL_RADIUS + 0.3)
   })
 
+  it('aiming turns the held ball round the base to the aimed side', async () => {
+    const t = await caught()
+    const p = t.piecePose('cyan-light2')
+    for (let i = 0; i < 30; i++) t.aimHold('cyan-light2', 0, 1, 0.25)
+    const b = t.ballPose()
+    expect(b.z - p.z).toBeGreaterThan(reach - 0.1)
+    expect(Math.abs(b.x - p.x)).toBeLessThan(0.1)
+  })
+
+  it('the held ball turns smoothly, a step at a time', async () => {
+    const t = await caught() // ball on the -x side
+    const p = t.piecePose('cyan-light2')
+    t.aimHold('cyan-light2', 1, 0, 0.25) // half a turn away: one step only goes 0.25 rad
+    const b = t.ballPose()
+    expect(Math.abs(Math.abs(Math.atan2(b.z - p.z, b.x - p.x)) - (Math.PI - 0.25))).toBeLessThan(0.05)
+  })
+
+  it('aiming with a piece that does not hold the ball leaves the ball alone', async () => {
+    const t = await caught()
+    const b = t.ballPose()
+    t.aimHold('cyan-light1', 0, 1, 0.25)
+    expect(dist(t.ballPose(), b)).toBeLessThan(1e-6)
+  })
+
   it('a clone keeps the holder', async () => {
     const t = await caught()
     const c = t.clone(), p = c.piecePose('cyan-light2')
