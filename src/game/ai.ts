@@ -39,12 +39,14 @@ export function candidates(table: Table, canShoot: (id: string) => boolean, me: 
     .slice(0, SHOOTERS)
   const perShooter = shooters.map(({ id, pose }) => {
     const reach = BASE_RADIUS[roleOf(id)] + BALL_RADIUS
-    const ghost = { x: ball.x - ((gx - ball.x) / gd) * reach, z: ball.z - (-ball.z / gd) * reach }
+    // The holder kicks the ball itself: it aims at the goal, not at a point behind the ball.
+    const holds = table.capturedBy === id
+    const ghost = holds ? { x: gx, z: 0 } : { x: ball.x - ((gx - ball.x) / gd) * reach, z: ball.z - (-ball.z / gd) * reach }
     const toward = (t: { x: number; z: number }) => (Math.atan2(t.z - pose.z, t.x - pose.x) * 180) / Math.PI
     const ground = (t: { x: number; z: number }, off: number, power: number): Shot =>
       ({ pieceId: id, ...dir(toward(t) + off), power, mode: 'ground' })
     const list: Shot[] = [ground(ghost, 0, POWERS[0]), { pieceId: id, ...dir(toward(ghost)), power: LOB_POWERS[0], mode: 'lob' }]
-    for (const target of [ghost, ball])
+    for (const target of holds ? [ghost] : [ghost, ball])
       for (const off of OFFSETS_DEG)
         for (const power of POWERS) if (!(target === ghost && off === 0 && power === POWERS[0])) list.push(ground(target, off, power))
     for (const power of LOB_POWERS.slice(1)) list.push({ pieceId: id, ...dir(toward(ghost)), power, mode: 'lob' })

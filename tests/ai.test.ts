@@ -39,6 +39,18 @@ describe('AI', () => {
     expect(first.some(s => s.mode === 'lob')).toBe(true)
   })
 
+  it('a piece holding the ball kicks it toward the goal, even with the ball behind it', () => {
+    park()
+    table.placePiece('magenta-light1', -4, 0)
+    table.placePiece('magenta-light2', 2, 0)
+    table.placeBall(1, BALL_RADIUS, 0)
+    table.shoot({ pieceId: 'magenta-light2', dirX: -1, dirZ: 0, power: 0.35, mode: 'ground' }) // reaches light1 from behind
+    expect(table.runTurn().captured).toBe('magenta-light1')
+    const kicks = candidates(table, id => id === 'magenta-light1', 'magenta')
+    expect(kicks.length).toBeGreaterThan(0)
+    for (const s of kicks) expect(s.dirX).toBeLessThan(0) // magenta attacks -x
+  })
+
   it('scoreOutcome rewards scoring and punishes own goals', () => {
     const ball = table.ballPose()
     expect(scoreOutcome(table, 'cyan', 'magenta', [], ball)).toBeGreaterThan(500)
