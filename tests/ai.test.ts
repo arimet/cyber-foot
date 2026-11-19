@@ -12,8 +12,8 @@ const park = () => PIECES.forEach((p, i) => table.placePiece(p.id, -8 + (i % 5) 
 
 const openGoal = () => {
   park()
-  table.placeBall(-7, BALL_RADIUS, 0)
   table.placePiece('magenta-light1', -4.5, 0.4)
+  table.giveBall('magenta-light1')
 }
 
 describe('AI', () => {
@@ -33,22 +33,33 @@ describe('AI', () => {
     }
   })
 
-  it('the first dozen candidates already cover every shooter and a lob (slow devices stop early)', () => {
+  it('without the ball, the first dozen candidates cover the three pieces nearest it (slow devices stop early)', () => {
     const first = candidates(table, magenta, 'magenta').slice(0, 12)
     expect(new Set(first.map(s => s.pieceId)).size).toBe(3)
-    expect(first.some(s => s.mode === 'lob')).toBe(true)
   })
 
-  it('a piece holding the ball kicks it toward the goal, even with the ball behind it', () => {
+  it('with the ball, only the holder plays, and the first dozen candidates hold a shot, a pass and a lob', () => {
+    const list = candidates(table, id => id.startsWith('cyan'), 'cyan')
+    expect(new Set(list.map(s => s.pieceId))).toEqual(new Set(['cyan-light1']))
+    const first = list.slice(0, 12)
+    expect(first.some(s => s.mode === 'lob')).toBe(true)
+    expect(first.some(s => s.dirX < 0)).toBe(true) // a pass back
+    expect(first[0].dirX).toBeGreaterThan(0.9) // at the goal first
+  })
+
+  it('a piece holding the ball shoots toward the goal, even with the ball behind it', () => {
     park()
     table.placePiece('magenta-light1', -4, 0)
-    table.placePiece('magenta-light2', 2, 0)
-    table.placeBall(1, BALL_RADIUS, 0)
-    table.shoot({ pieceId: 'magenta-light2', dirX: -1, dirZ: 0, power: 0.35, mode: 'ground' }) // reaches light1 from behind
-    expect(table.runTurn().captured).toBe('magenta-light1')
-    const kicks = candidates(table, id => id === 'magenta-light1', 'magenta')
-    expect(kicks.length).toBeGreaterThan(0)
-    for (const s of kicks) expect(s.dirX).toBeLessThan(0) // magenta attacks -x
+    table.giveBall('magenta-light1', 1, 0)
+    expect(candidates(table, magenta, 'magenta')[0].dirX).toBeLessThan(-0.9) // magenta attacks -x
+  })
+
+  it('without the ball, the pieces slide at its holder', () => {
+    const list = candidates(table, magenta, 'magenta') // cyan-light1 holds at the centre
+    const h = table.piecePose('cyan-light1')
+    const first = list[0], p = table.piecePose(first.pieceId)
+    const toward = Math.atan2(h.z - p.z, h.x - p.x)
+    expect(Math.abs(Math.atan2(first.dirZ, first.dirX) - toward)).toBeLessThan(0.01)
   })
 
   it('scoreOutcome rewards scoring and punishes own goals', () => {
@@ -57,10 +68,28 @@ describe('AI', () => {
     expect(scoreOutcome(table, 'magenta', 'magenta', [], ball)).toBeLessThan(-500)
   })
 
-  it('scoreOutcome likes a pass caught by a teammate and dislikes an interception', () => {
-    const ball = table.ballPose(), plain = scoreOutcome(table, null, 'magenta', [], ball)
-    expect(scoreOutcome(table, null, 'magenta', [], ball, 'magenta-light2')).toBeGreaterThan(plain)
-    expect(scoreOutcome(table, null, 'magenta', [], ball, 'cyan-light2')).toBeLessThan(plain)
+  it('scoreOutcome likes having the ball', () => {
+    park()
+    table.placePiece('magenta-light1', 0, 0)
+    table.placePiece('cyan-light1', 0, 3)
+    const ball = { ...table.ballPose(), x: 0, z: 0.98 }
+    table.giveBall('magenta-light1', 0, 1)
+    const mine = scoreOutcome(table, null, 'magenta', [], ball)
+    table.giveBall('cyan-light1', 0, -1)
+    const theirs = scoreOutcome(table, null, 'magenta', [], ball)
+    expect(mine).toBeGreaterThan(theirs + 20)
+  })
+
+  it('scoreOutcome likes a pass caught by a teammate', () => {
+    park()
+    table.placePiece('magenta-light1', 0, 0)
+    table.placePiece('magenta-light2', -4, 0)
+    table.giveBall('magenta-light1', -1, 0)
+    const before = table.ballPose(), held = scoreOutcome(table, null, 'magenta', [], before)
+    table.shoot({ pieceId: 'magenta-light1', dirX: -1, dirZ: 0, power: 0.5, mode: 'ground' })
+    table.runTurn()
+    expect(table.passedTo).toBe('magenta-light2')
+    expect(scoreOutcome(table, null, 'magenta', [], before)).toBeGreaterThan(held)
   })
 
   it('legend scores an open goal', () => {

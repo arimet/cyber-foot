@@ -38,14 +38,14 @@ const fr = {
   missed: 'Raté, réessaie !',
   passCaught: 'Captée ! Le chat garde la balle et ne bouge plus : tire depuis lui, la balle suit ta visée et part seule.',
   done: 'Réussi !',
-  tipDone: 'Réussi ! Un pion renversé passe le prochain tour de son équipe.',
-  rules: 'Un tir chacun son tour, mais une passe captée par un coéquipier te fait rejouer (3 max) : le pion qui tient la balle tire sans bouger. Le premier à 5 buts gagne.',
+  tackleDone: 'Réussi ! Un tacle trop fort peut renverser un pion : il passe alors le prochain tour de son équipe.',
+  rules: "Un pion qui touche la balle la garde. Si ton équipe a la balle, le porteur passe ou tire sans bouger, ou un autre pion glisse pour se placer. Sinon, glisse un pion pour tacler ou ramasser la balle. Une passe captée te fait rejouer (3 max). Le gardien attrape tout. Le premier à 5 buts gagne.",
   drill: {
-    empty: 'Tire ton pion en arrière et lâche : plus tu tires, plus il part fort. Marque !',
-    penalty: 'Le gardien couvre un côté : vise le côté ouvert.',
-    lob: 'Un défenseur bloque le tir au sol : choisis Lob pour passer par-dessus.',
-    pass: 'Le rhino bloque le but. Fais une passe douce au chat : il capte le ballon, puis tire avec lui.',
-    tip: 'Renverse le chat adverse en fonçant dessus.',
+    empty: 'Ton renard a la balle. Tire-le en arrière et lâche : il ne bouge pas, la balle part seule. Plus tu tires, plus elle va loin. Marque !',
+    penalty: 'Le gardien attrape tout ce qui le touche, et il couvre un côté : vise le côté ouvert.',
+    lob: 'Le rhino arrête les tirs au sol : choisis Lob pour passer par-dessus.',
+    pass: 'Le rhino bloque le but. Fais une passe douce au chat : il garde la balle, puis tire avec lui.',
+    tackle: 'Le chat adverse a la balle. Fonce dans lui avec ton renard pour la lui faire perdre.',
   } as Record<DrillKey, string>,
 }
 
@@ -78,14 +78,14 @@ const en: typeof fr = {
   missed: 'Missed, try again!',
   passCaught: 'Caught! The cat keeps the ball and stays put: pull from it, the ball follows your aim and goes off alone.',
   done: 'Done!',
-  tipDone: "Done! A piece knocked over sits out its team's next turn.",
-  rules: 'One shot each, in turn, but a pass caught by a teammate gives you another shot (3 at most): the piece holding the ball shoots it without moving. First to 5 goals wins.',
+  tackleDone: "Done! Too hard a tackle can knock a piece over: it then sits out its team's next turn.",
+  rules: 'A piece that touches the ball keeps it. If your team has the ball, the holder passes or shoots without moving, or another piece slides into place. If not, slide a piece to tackle or pick the ball up. A caught pass gives you another shot (3 at most). The keeper catches everything. First to 5 goals wins.',
   drill: {
-    empty: 'Pull your piece back and let go: the further you pull, the harder it goes. Score!',
-    penalty: 'The keeper covers one side: aim for the open side.',
-    lob: 'A defender blocks shots along the ground: pick Lob to go over him.',
-    pass: 'The rhino blocks the goal. Pass softly to the cat: it catches the ball, then shoot with it.',
-    tip: "Knock the other team's cat over by running into it.",
+    empty: 'Your fox has the ball. Pull it back and let go: it stays put, the ball goes off alone. The further you pull, the further it goes. Score!',
+    penalty: 'The keeper catches whatever touches it, and covers one side: aim for the open side.',
+    lob: 'The rhino stops shots along the ground: pick Lob to go over it.',
+    pass: 'The rhino blocks the goal. Pass softly to the cat: it keeps the ball, then shoot with it.',
+    tackle: "The other team's cat has the ball. Run your fox into it to win the ball.",
   },
 }
 

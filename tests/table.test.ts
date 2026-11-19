@@ -16,7 +16,7 @@ describe('Table', () => {
   })
 
   it('reset puts every piece at its kickoff spot, upright, and the ball at the centre', () => {
-    for (const p of PIECES) {
+    for (const p of PIECES.filter(p => p.id !== 'cyan-light1')) { // the kickoff piece stands at the ball
       const pose = table.piecePose(p.id)
       expect(pose.x).toBeCloseTo(KICKOFF[p.id].x, 5)
       expect(pose.z).toBeCloseTo(KICKOFF[p.id].z, 5)
@@ -25,6 +25,14 @@ describe('Table', () => {
     const ball = table.ballPose()
     expect(ball.x).toBeCloseTo(0, 5)
     expect(ball.z).toBeCloseTo(0, 5)
+  })
+
+  it('reset gives the ball to the kickoff team, at the centre', () => {
+    expect(table.holder).toBe('cyan-light1')
+    table.reset('magenta')
+    expect(table.holder).toBe('magenta-light1')
+    expect(dist(table.ballPose(), { x: 0, z: 0 })).toBeLessThan(1e-6)
+    expect(table.piecePose('magenta-light1').x).toBeGreaterThan(0)
   })
 
   it('a light piece travels much farther than a heavy one for the same shot', () => {
@@ -51,13 +59,6 @@ describe('Table', () => {
     expect(launch('cyan-heavy1')).toBeGreaterThanOrEqual(launch('cyan-keeper') - 1e-6)
   })
 
-  it('a piece driven into the ball sends it forward', () => {
-    table.placePiece('cyan-light1', -3, 0)
-    table.placeBall(-1.5, BALL_RADIUS, 0)
-    table.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.8, mode: 'ground' })
-    table.runTurn()
-    expect(table.ballPose().x).toBeGreaterThan(0)
-  })
 
   it('ball fully past the goal line between the posts is a goal against that side', () => {
     table.placeBall(-10.6, BALL_RADIUS, 0, -3, 0, 0)
@@ -170,15 +171,11 @@ describe('lob and tipping', () => {
   }
 
   it('a lob lifts the ball', () => {
-    table.placePiece('cyan-light1', -3, 0)
-    table.placeBall(-1.8, BALL_RADIUS, 0)
     table.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.8, mode: 'lob' })
     expect(ballPeak()).toBeGreaterThan(4 * BALL_RADIUS)
   })
 
   it('a ground shot keeps the ball low', () => {
-    table.placePiece('cyan-light1', -3, 0)
-    table.placeBall(-1.8, BALL_RADIUS, 0)
     table.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.8, mode: 'ground' })
     expect(ballPeak()).toBeLessThan(2 * BALL_RADIUS)
   })
@@ -326,9 +323,7 @@ describe('clone', () => {
 describe('contacts', () => {
   it('contacts are reported with their strength', async () => {
     const t = await Table.create()
-    t.placePiece('cyan-light1', -3, 0)
-    t.placeBall(-1.5, BALL_RADIUS, 0)
-    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    t.placeBall(0, 2, 4.5, 16, 0, 0) // drops on the floor, then hits the end rail
     const all: { kind: string; strength: number }[] = []
     for (let i = 0; i < 240; i++) all.push(...t.step().contacts)
     expect(all.some(c => c.kind === 'ball' && c.strength > 1)).toBe(true)
@@ -355,119 +350,173 @@ describe('contacts', () => {
   })
 })
 
-describe('magnetic control', () => {
-  // Only the passer (cyan-light1) and the receiver (cyan-light2) on the pitch, the ball between them.
-  const pitch = async () => {
+describe('possession', () => {
+  // Only the listed pieces on the pitch.
+  const pitch = async (spots: Record<string, [number, number]>) => {
     const t = await Table.create()
-    t.setBenched(new Set(PIECES.map(p => p.id).filter(id => id !== 'cyan-light1' && id !== 'cyan-light2')))
-    t.placePiece('cyan-light1', -2, 0)
-    t.placePiece('cyan-light2', 4, 0)
-    t.placeBall(-1, BALL_RADIUS, 0)
+    t.setBenched(new Set(PIECES.map(p => p.id).filter(id => !(id in spots))))
+    for (const [id, [x, z]] of Object.entries(spots)) t.placePiece(id, x, z)
     return t
   }
   const reach = BASE_RADIUS.light + BALL_RADIUS
+  const kick = (t: Table, id: string, dirX: number, dirZ: number, power: number, mode: 'ground' | 'lob' = 'ground') =>
+    t.shoot({ pieceId: id, dirX, dirZ, power, mode })
 
-  it('a soft pass is caught at the feet of a teammate', async () => {
-    const t = await pitch()
-    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.35, mode: 'ground' })
-    expect(t.runTurn().captured).toBe('cyan-light2')
+  it('a held ball stays at the feet of its holder', async () => {
+    const t = await pitch({ 'cyan-light1': [0, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    t.runTurn()
+    expect(t.holder).toBe('cyan-light1')
+    expect(dist(t.ballPose(), { x: reach, z: 0 })).toBeLessThan(0.1)
+  })
+
+  it('placing the holder elsewhere drops the ball', async () => {
+    const t = await pitch({ 'cyan-light1': [0, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    t.placePiece('cyan-light1', -4, 0)
+    expect(t.holder).toBeNull()
+  })
+
+  it('a piece sliding onto a loose ball takes it', async () => {
+    const t = await pitch({ 'cyan-light2': [0, 3] })
+    t.placeBall(0, BALL_RADIUS, 0)
+    t.shoot({ pieceId: 'cyan-light2', dirX: 0, dirZ: -1, power: 0.6, mode: 'ground' })
+    expect(t.runTurn().caught).toBe('cyan-light2')
+    expect(t.holder).toBe('cyan-light2')
+    expect(t.passedTo).toBeNull() // picking up a loose ball is not a pass
+  })
+
+  it('a soft kick to a teammate is a pass', async () => {
+    const t = await pitch({ 'cyan-light1': [-2, 0], 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    kick(t, 'cyan-light1', 1, 0, 0.5)
+    t.runTurn()
+    expect(t.holder).toBe('cyan-light2')
+    expect(t.passedTo).toBe('cyan-light2')
     expect(dist(t.ballPose(), t.piecePose('cyan-light2'))).toBeLessThan(reach + 0.1)
   })
 
-  // A forward pass reaches the catcher from behind, on its -x side.
-  const caught = async () => {
-    const t = await pitch()
-    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 0.35, mode: 'ground' })
-    expect(t.runTurn().captured).toBe('cyan-light2')
-    return t
-  }
+  it('a soft kick caught by an opponent is not a pass', async () => {
+    const t = await pitch({ 'cyan-light1': [-2, 0], 'magenta-light1': [4, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    kick(t, 'cyan-light1', 1, 0, 0.5)
+    t.runTurn()
+    expect(t.holder).toBe('magenta-light1')
+    expect(t.passedTo).toBeNull()
+  })
 
-  it('a caught ball stays on the side it arrived from', async () => {
-    const t = await caught()
-    const b = t.ballPose(), p = t.piecePose('cyan-light2')
-    expect(p.x - b.x).toBeGreaterThan(reach - 0.1)
-    expect(Math.abs(b.z - p.z)).toBeLessThan(0.2)
+  it('a hard kick bounces off a field piece', async () => {
+    const t = await pitch({ 'cyan-light1': [-2, 0], 'magenta-heavy1': [2, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    kick(t, 'cyan-light1', 1, 0, 1)
+    t.runTurn()
+    expect(t.holder).not.toBe('magenta-heavy1')
+  })
+
+  it('the keeper catches even a hard kick', async () => {
+    const t = await pitch({ 'cyan-light1': [4, 0], 'magenta-keeper': [8.5, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    kick(t, 'cyan-light1', 1, 0, 1)
+    expect(t.runTurn().goalAgainst).toBeNull()
+    expect(t.holder).toBe('magenta-keeper')
+  })
+
+  it('a lob flies over a field piece', async () => {
+    const t = await pitch({ 'cyan-light1': [-4, 0], 'magenta-heavy1': [1, 0] })
+    t.giveBall('cyan-light1', 1, 0)
+    kick(t, 'cyan-light1', 1, 0, 0.7, 'lob')
+    t.runTurn()
+    expect(t.ballPose().x).toBeGreaterThan(3)
+    expect(t.holder).not.toBe('magenta-heavy1')
+  })
+
+  it('a hard tackle knocks the ball loose', async () => {
+    const t = await pitch({ 'magenta-light1': [2, 0], 'cyan-heavy1': [-1.5, 0] })
+    t.giveBall('magenta-light1', 1, 0) // on the far side: the tackler hits the holder
+    t.shoot({ pieceId: 'cyan-heavy1', dirX: 1, dirZ: 0, power: 0.9, mode: 'ground' })
+    t.runTurn()
+    expect(t.holder).not.toBe('magenta-light1')
+    expect(t.ballPose().x).toBeGreaterThan(2 + reach + 0.5) // sent on the way of the hit
+  })
+
+  it('a soft bump by an opponent does not take the ball', async () => {
+    const t = await pitch({ 'magenta-light1': [2, 0], 'cyan-heavy1': [0.3, 0] })
+    t.giveBall('magenta-light1', 1, 0)
+    t.shoot({ pieceId: 'cyan-heavy1', dirX: 1, dirZ: 0, power: 0.25, mode: 'ground' })
+    t.runTurn()
+    expect(t.holder).toBe('magenta-light1')
+  })
+
+  it('a teammate running into the holder does not take the ball', async () => {
+    const t = await pitch({ 'magenta-light1': [2, 0], 'magenta-heavy1': [-1.5, 0] })
+    t.giveBall('magenta-light1', 1, 0)
+    t.shoot({ pieceId: 'magenta-heavy1', dirX: 1, dirZ: 0, power: 0.9, mode: 'ground' })
+    t.runTurn()
+    expect(t.holder === 'magenta-light1' || t.isTipped('magenta-light1')).toBe(true)
+  })
+
+  it('a holder knocked over drops the ball', async () => {
+    const t = await pitch({ 'magenta-light1': [2, 0], 'cyan-heavy1': [-1, 0] })
+    t.giveBall('magenta-light1', 0, 1)
+    t.shoot({ pieceId: 'cyan-heavy1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
+    t.runTurn()
+    expect(t.isTipped('magenta-light1')).toBe(true)
+    expect(t.holder).not.toBe('magenta-light1')
   })
 
   it('the holder kicks the ball away itself and stays put, whatever side the ball is on', async () => {
-    const t = await caught()
-    const p = t.piecePose('cyan-light2')
-    t.shoot({ pieceId: 'cyan-light2', dirX: 1, dirZ: 0, power: 0.5, mode: 'ground' })
+    const t = await pitch({ 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light2', -1, 0)
+    kick(t, 'cyan-light2', 1, 0, 0.5)
     t.runTurn()
-    expect(dist(t.piecePose('cyan-light2'), p)).toBeLessThan(0.05)
-    expect(t.ballPose().x).toBeGreaterThan(p.x + 2)
+    expect(dist(t.piecePose('cyan-light2'), { x: 4, z: 0 })).toBeLessThan(0.05)
+    expect(t.ballPose().x).toBeGreaterThan(6)
   })
 
   it('the harder the pull, the farther the kick', async () => {
     const far = async (power: number) => {
-      const t = await caught()
-      t.shoot({ pieceId: 'cyan-light2', dirX: 0, dirZ: 1, power, mode: 'ground' })
+      const t = await pitch({ 'cyan-light2': [0, -4] })
+      t.giveBall('cyan-light2', 0, 1)
+      kick(t, 'cyan-light2', 0, 1, power)
       t.runTurn()
       return t.ballPose().z
     }
     expect(await far(0.6)).toBeGreaterThan((await far(0.2)) + 1)
   })
 
-  it('a kicked lob leaves the ground', async () => {
-    const t = await caught()
-    t.shoot({ pieceId: 'cyan-light2', dirX: 1, dirZ: 0, power: 0.6, mode: 'lob' })
-    let top = 0
-    for (let i = 0; i < 30; i++) { t.step(); top = Math.max(top, t.ballPose().y) }
-    expect(top).toBeGreaterThan(BALL_RADIUS + 0.3)
-  })
-
   it('aiming turns the held ball round the base to the aimed side', async () => {
-    const t = await caught()
-    const p = t.piecePose('cyan-light2')
+    const t = await pitch({ 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light2', -1, 0)
     for (let i = 0; i < 30; i++) t.aimHold('cyan-light2', 0, 1, 0.25)
     const b = t.ballPose()
-    expect(b.z - p.z).toBeGreaterThan(reach - 0.1)
-    expect(Math.abs(b.x - p.x)).toBeLessThan(0.1)
+    expect(b.z).toBeGreaterThan(reach - 0.1)
+    expect(Math.abs(b.x - 4)).toBeLessThan(0.1)
   })
 
   it('the held ball turns smoothly, a step at a time', async () => {
-    const t = await caught() // ball on the -x side
-    const p = t.piecePose('cyan-light2')
+    const t = await pitch({ 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light2', -1, 0)
     t.aimHold('cyan-light2', 1, 0, 0.25) // half a turn away: one step only goes 0.25 rad
     const b = t.ballPose()
-    expect(Math.abs(Math.abs(Math.atan2(b.z - p.z, b.x - p.x)) - (Math.PI - 0.25))).toBeLessThan(0.05)
+    expect(Math.abs(Math.abs(Math.atan2(b.z, b.x - 4)) - (Math.PI - 0.25))).toBeLessThan(0.05)
   })
 
   it('aiming with a piece that does not hold the ball leaves the ball alone', async () => {
-    const t = await caught()
+    const t = await pitch({ 'cyan-light1': [-2, 0], 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light2', -1, 0)
     const b = t.ballPose()
     t.aimHold('cyan-light1', 0, 1, 0.25)
     expect(dist(t.ballPose(), b)).toBeLessThan(1e-6)
   })
 
   it('a clone keeps the holder', async () => {
-    const t = await caught()
-    const c = t.clone(), p = c.piecePose('cyan-light2')
-    c.shoot({ pieceId: 'cyan-light2', dirX: 1, dirZ: 0, power: 0.5, mode: 'ground' })
+    const t = await pitch({ 'cyan-light2': [4, 0] })
+    t.giveBall('cyan-light2', -1, 0)
+    const c = t.clone()
+    expect(c.holder).toBe('cyan-light2')
+    kick(c, 'cyan-light2', 1, 0, 0.5)
     c.runTurn()
-    expect(dist(c.piecePose('cyan-light2'), p)).toBeLessThan(0.05)
+    expect(dist(c.piecePose('cyan-light2'), { x: 4, z: 0 })).toBeLessThan(0.05)
     c.free()
-  })
-
-  it('placing the ball elsewhere drops the hold: the piece runs again', async () => {
-    const t = await caught()
-    t.placeBall(0, BALL_RADIUS, 3)
-    const p = t.piecePose('cyan-light2')
-    t.shoot({ pieceId: 'cyan-light2', dirX: 1, dirZ: 0, power: 0.5, mode: 'ground' })
-    t.runTurn()
-    expect(dist(t.piecePose('cyan-light2'), p)).toBeGreaterThan(1)
-  })
-
-  it('a hard shot is not caught', async () => {
-    const t = await pitch()
-    t.shoot({ pieceId: 'cyan-light1', dirX: 1, dirZ: 0, power: 1, mode: 'ground' })
-    expect(t.runTurn().captured).toBeNull()
-  })
-
-  it('a piece already at the ball when the shot starts does not catch it', async () => {
-    const t = await pitch()
-    t.placeBall(4 - reach - 0.2, BALL_RADIUS, 0) // resting by the receiver
-    t.shoot({ pieceId: 'cyan-light1', dirX: -1, dirZ: 0, power: 0.3, mode: 'ground' }) // the shooter runs off the other way
-    expect(t.runTurn().captured).toBeNull()
   })
 })

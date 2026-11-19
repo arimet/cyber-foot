@@ -23,6 +23,8 @@ export const BALL_MASS = 0.3
 export const MAX_IMPULSE = 16
 export const SHOT_BOOST: Record<Role, number> = { heavy: 1.5, keeper: 1, light: 1 } // heavies flick harder: as fast as the keeper
 export const LOB_ANGLE_DEG = 35
+export const KICK_SPEED = 17.5 // ball speed of a full-power kick by the holder: what a light piece's full shot gives it
+export const BALL_DAMPING = 1.6
 
 export const SETTLE_SPEED = 0.12
 export const SETTLE_STEPS = 30

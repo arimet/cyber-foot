@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import {
-  BALL_MASS, BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, KICKOFF,
+  BALL_DAMPING, BALL_MASS, BALL_RADIUS, BASE_RADIUS, BODY_HEIGHT, GLASS_HEIGHT, GOAL_DEPTH, GOAL_HALF_WIDTH, GOAL_HEIGHT, KICK_SPEED, KICKOFF,
   GLASS_CURVE, LOB_ANGLE_DEG, MASS, MAX_IMPULSE, MAX_TURN_STEPS, PIECE_INSET, PIECES, RAMP_RADIUS, SETTLE_SPEED, SETTLE_STEPS, SHOT_BOOST,
   TABLE_HALF_LENGTH, TABLE_HALF_WIDTH, TIP_COS,
 } from '../game/constants'
@@ -23,7 +23,6 @@ const BALL_BOUNCE = 0.6
 const WALL_BOUNCE = 0.5
 const PIECE_DAMPING = 0.45
 const PIECE_SPIN_DAMPING = 4 // a piece lying on its side would roll on its round base forever
-const BALL_DAMPING = 1.6
 const BALL_RAIL_DAMPING = 0.1 // up the curved rail or the glass: nothing rolls against it, so it comes back with pace
 const BALL_SPIN_DAMPING = 0.8
 // Knock: the flat bases meet below the centre of mass, so plain contact rarely tips anything. A head-on hit is scored
@@ -36,15 +35,15 @@ const FALL_SPIN_DAMPING = 0.3
 const LYING_DAMPING = 3 // a figure lying on its side scrapes to a halt (friction would trip it over its head)
 const FALLEN_BASE_SHARE = 0.4 // a knocked piece loses its weighted base's pull, or it would rock back up like a weeble
 const LAID_COS = 0.2 // past ~78° the piece is down: heavy spin damping, so it never cartwheels back up
-// Magnetic control: a standing piece catches a ball rolling by slowly enough, within CAPTURE_GAP of its base, and
-// draws it to its feet, on the side it came from. A hard shot goes through; a lob in the air too. The shooter never catches its own shot, nor
-// does a piece the ball starts beside, until the ball has left it once, nor one the ball bounced off (a deflection).
+// Possession: a standing piece takes the ball once it comes within CAPTURE_GAP of its base and keeps it at its feet, on
+// the side it came from. A field piece lets a hard or flying ball bounce off; the keeper catches anything it touches.
+// A piece the ball bounced off, a kicker and the two pieces of a tackle may not take it until it has left their reach.
 const CAPTURE_GAP = 0.5
-const CAPTURE_SPEED = 5
-const CAPTURE_HEIGHT = BALL_RADIUS + 0.05 // rolling on the floor, not bouncing
-const STILL_PIECE = 1 // a piece moving faster than this is not set to receive
+const CATCH_SPEED = 9 // a field piece lets a faster ball bounce off: a half-power kick or less is caught
+const CATCH_HEIGHT = BALL_RADIUS + 0.3 // a field piece does not catch a ball flying higher
 const HOLD_IN = 0.2 // share of the way in to the feet the ball goes each step
-const KICK_SPEED = 17.5 // ball speed of a full-power kick by the holder: what a light piece's full shot gives it
+const TACKLE_SPEED = 3 // closing speed at which an opponent knocks the ball loose
+const TACKLE_BALL = 4 // the loose ball leaves at least this fast, on the way of the hit
 
 // Collision groups: the curved ramp along the rails only meets the ball; pieces stop at a straight wall a little in
 // front of it instead, since a flat base riding up a curve would tip.
@@ -63,16 +62,16 @@ export class Table {
   private readonly events = new RAPIER.EventQueue(true)
   private calm = 0
   private goalReported = false
-  private lob: { id: string; dirX: number; dirZ: number } | null = null
   private readonly preStep = new Map<string, { x: number; z: number }>()
   private readonly falling = new Set<string>()
   private floorCollider = -1
   private benched: ReadonlySet<string> = new Set() // off the pitch: no body in play
   private ballPre = { x: 0, y: 0, z: 0 }
-  private shooter: string | null = null // the piece that played the turn's shot: magnetism is on from then
-  private armed = new Set<string>() // pieces the ball has been away from since the shot: they may catch it
-  private deflected = new Set<string>() // pieces the ball bounced off since the shot: they may not
-  private captured: string | null = null // the piece holding the ball: caught since the last shot, until the next one
+  private holding: string | null = null // the piece with the ball at its feet
+  private caught: string | null = null // the piece that took the ball since the last shot
+  private kicker: string | null = null // the last shot was a kick by this piece
+  private unarmed = new Set<string>() // may not take the ball until it has left their reach
+  private tackled: string | null = null // lost the ball to a tackle: may not take it back before the next shot
 
   static async create(): Promise<Table> {
     await (ready ??= RAPIER.init())
@@ -99,7 +98,11 @@ export class Table {
       this.ballCollider = src.ballCollider
       for (const [h, id] of src.colliderOwner) this.colliderOwner.set(h, id)
       for (const id of src.falling) this.falling.add(id)
-      this.captured = src.captured
+      this.holding = src.holding
+      this.caught = src.caught
+      this.kicker = src.kicker
+      this.unarmed = new Set(src.unarmed)
+      this.tackled = src.tackled
       this.floorCollider = src.floorCollider
       return
     }
@@ -194,18 +197,31 @@ export class Table {
     b.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 
-  reset(): void {
+  // Kickoff: every piece on its spot, the kickoff team's light1 at the centre with the ball.
+  reset(kickoff: Team = 'cyan'): void {
     for (const p of this.pieces) this.placePiece(p.id, KICKOFF[p.id].x, KICKOFF[p.id].z)
+    const id = `${kickoff}-light1`
+    this.placePiece(id, (kickoff === 'cyan' ? -1 : 1) * (BASE_RADIUS.light + BALL_RADIUS + 0.03), 0)
     this.placeBall(0, BALL_RADIUS, 0)
     this.goalReported = false
-    this.lob = null
-    this.shooter = null
-    this.captured = null
+    this.kicker = null
+    this.unarmed.clear()
+    this.holding = id
+  }
+
+  // The ball at the piece's feet, on the (dirX, dirZ) side (default: toward the goal its team attacks).
+  giveBall(id: string, dirX?: number, dirZ?: number): void {
+    const o = this.body(id).translation(), r = BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.03
+    if (dirX === undefined || dirZ === undefined) [dirX, dirZ] = [id.startsWith('cyan') ? 1 : -1, 0]
+    const d = Math.hypot(dirX, dirZ) || 1
+    this.placeBall(o.x + (dirX / d) * r, BALL_RADIUS, o.z + (dirZ / d) * r)
+    this.holding = id
   }
 
   // Takes the listed pieces off the pitch (back on their kickoff spot, body disabled) and brings every other one back.
   setBenched(ids: ReadonlySet<string>): void {
     this.benched = new Set(ids)
+    if (this.holding && ids.has(this.holding)) this.holding = null
     for (const p of this.pieces) {
       const b = this.body(p.id)
       if (ids.has(p.id)) this.placePiece(p.id, KICKOFF[p.id].x, KICKOFF[p.id].z)
@@ -223,6 +239,7 @@ export class Table {
     this.ballast(id, BASE_SHARE)
     this.falling.delete(id)
     this.calm = 0
+    if (id === this.holding) this.holding = null
   }
 
   // Collider 0 is the base, 1 the body.
@@ -237,24 +254,39 @@ export class Table {
     this.ball.setLinvel({ x: vx, y: vy, z: vz }, true)
     this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true)
     this.calm = 0
-    this.captured = null
+    this.holding = null
+    this.caught = null
   }
 
-  // A piece shoots by running into the ball; the piece holding the ball kicks it instead and stays put.
+  // The holder kicks the ball and stays put; any other piece slides (to tackle, block or pick up a loose ball).
   shoot(shot: Shot): void {
-    if (shot.pieceId === this.captured) this.kick(shot)
-    else {
-      const j = shot.power * MAX_IMPULSE * SHOT_BOOST[this.role(shot.pieceId)]
-      this.body(shot.pieceId).applyImpulse({ x: shot.dirX * j, y: 0, z: shot.dirZ * j }, true)
-    }
-    this.calm = 0
     this.goalReported = false
-    this.lob = shot.mode === 'lob' && shot.pieceId !== this.captured ? { id: shot.pieceId, dirX: shot.dirX, dirZ: shot.dirZ } : null
-    this.shooter = shot.pieceId
-    this.captured = null
-    this.deflected.clear()
-    const t = this.ball.translation()
-    this.armed = new Set(this.pieces.filter(p => !this.benched.has(p.id) && this.ballGap(p.id, t) > CAPTURE_GAP).map(p => p.id))
+    this.caught = null
+    this.kicker = null
+    this.tackled = null
+    this.launch(shot)
+  }
+
+  // Strategy mode: several pieces set off at the same instant.
+  shootAll(shots: Shot[]): void {
+    this.goalReported = false
+    this.caught = null
+    this.kicker = null
+    this.tackled = null
+    for (const s of shots) this.launch(s)
+  }
+
+  private launch(shot: Shot) {
+    this.calm = 0
+    if (shot.pieceId === this.holding) {
+      this.kick(shot)
+      this.kicker = shot.pieceId
+      this.unarmed.add(shot.pieceId)
+      this.holding = null
+      return
+    }
+    const j = shot.power * MAX_IMPULSE * SHOT_BOOST[this.role(shot.pieceId)]
+    this.body(shot.pieceId).applyImpulse({ x: shot.dirX * j, y: 0, z: shot.dirZ * j }, true)
   }
 
   // The ball leaves the holder's feet on the aimed side (it may have been held on any side), at a speed set by the pull.
@@ -269,7 +301,7 @@ export class Table {
   // While the holder aims, its ball turns round the base toward the aimed side, at most maxTurn rad per call
   // (one call per frame), so the kick then leaves from where the ball already is. Other pieces leave it alone.
   aimHold(id: string, dirX: number, dirZ: number, maxTurn: number): void {
-    if (id !== this.captured) return
+    if (id !== this.holding) return
     const o = this.body(id).translation(), t = this.ball.translation()
     const a = Math.atan2(t.z - o.z, t.x - o.x)
     const turn = Math.atan2(dirZ, dirX) - a, d = Math.atan2(Math.sin(turn), Math.cos(turn)) // shortest way round
@@ -284,45 +316,73 @@ export class Table {
     return Math.hypot(t.x - o.x, t.z - o.z) - BASE_RADIUS[this.role(id)] - BALL_RADIUS
   }
 
-  // The piece that caught the ball since the last shot, if any.
-  get capturedBy(): string | null {
-    return this.captured
+  get holder(): string | null {
+    return this.holding
   }
 
-  // Catches the ball at the first armed piece it rolls by slowly, then keeps it drawn in to that piece's feet.
+  // The teammate that caught the last kick, if it was one: a pass.
+  get passedTo(): string | null {
+    const k = this.kicker, c = this.caught
+    return k && c && c !== k && this.team(c) === this.team(k) ? c : null
+  }
+
+  private team(id: string): Team {
+    return this.pieces.find(p => p.id === id)!.team
+  }
+
+  // Whether the piece can take a ball arriving at that speed and height.
+  private catches(id: string, speed: number, y: number): boolean {
+    if (this.benched.has(id) || this.unarmed.has(id) || id === this.tackled || this.falling.has(id) || this.isTipped(id)) return false
+    return this.role(id) === 'keeper' ? y < GOAL_HEIGHT : speed <= CATCH_SPEED && y <= CATCH_HEIGHT
+  }
+
+  // Keeps the held ball at its holder's feet (a holder knocked over drops it), or gives a loose ball to the first
+  // piece within reach that can take it.
   private magnet(): string | null {
-    if (!this.shooter || this.goalReported) return null
+    if (this.goalReported) return null
     const t = this.ball.translation()
-    if (this.captured) {
-      this.hold(this.captured, t)
+    for (const id of [...this.unarmed]) if (this.ballGap(id, t) > CAPTURE_GAP) this.unarmed.delete(id)
+    if (this.holding && this.isTipped(this.holding)) {
+      this.unarmed.add(this.holding)
+      this.holding = null
+    }
+    if (this.holding) {
+      this.hold(this.holding, t)
       return null
     }
-    const v = this.ball.linvel()
-    const slow = Math.hypot(v.x, v.z) < CAPTURE_SPEED && t.y < CAPTURE_HEIGHT
+    const v = this.ballPre, speed = Math.hypot(v.x, v.z)
     for (const p of this.pieces) {
-      if (p.id === this.shooter || this.benched.has(p.id)) continue
-      const gap = this.ballGap(p.id, t)
-      if (gap > CAPTURE_GAP) {
-        this.armed.add(p.id)
-        continue
-      }
-      const pv = this.body(p.id).linvel()
-      if (!slow || !this.armed.has(p.id) || this.deflected.has(p.id) || this.isTipped(p.id) || Math.hypot(pv.x, pv.z) > STILL_PIECE) continue
-      this.captured = p.id
+      if (this.ballGap(p.id, t) > CAPTURE_GAP || !this.catches(p.id, speed, t.y)) continue
+      this.holding = this.caught = p.id
       this.hold(p.id, t)
       return p.id
     }
     return null
   }
 
-  // Draws the ball straight in to the piece's feet, on the side it arrived from, and keeps it there.
+  // Draws the ball in to the piece's feet, on the side it is on, and carries it along as the piece moves.
   private hold(id: string, t: { x: number; z: number }) {
-    const o = this.body(id).translation()
+    const b = this.body(id), o = b.translation(), pv = b.linvel()
     const d = Math.hypot(t.x - o.x, t.z - o.z) || 1
     const k = (BASE_RADIUS[this.role(id)] + BALL_RADIUS + 0.03 - d) * HOLD_IN / d
     const fps = 60 // the fixed step: the velocity that lands the ball on the next point
-    this.ball.setLinvel({ x: (t.x - o.x) * k * fps, y: Math.min(0, this.ball.linvel().y), z: (t.z - o.z) * k * fps }, true)
+    this.ball.setLinvel({ x: pv.x + (t.x - o.x) * k * fps, y: Math.min(0, this.ball.linvel().y), z: pv.z + (t.z - o.z) * k * fps }, true)
     this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  }
+
+  // An opponent ran into the holder or its ball: the ball comes loose on the way of the hit.
+  private tackle(by: string) {
+    const v = this.preStep.get(by)!, s = Math.hypot(v.x, v.z) || 1, speed = Math.max(TACKLE_BALL, s)
+    this.tackled = this.holding
+    this.unarmed.add(by)
+    if (this.caught === this.holding) this.caught = null
+    this.holding = null
+    this.ball.setLinvel({ x: (v.x / s) * speed, y: 0, z: (v.z / s) * speed }, true)
+  }
+
+  // An opponent of the holder hits it, or its ball, hard enough.
+  private tackles(by: string, closing: number): boolean {
+    return !!this.holding && by !== this.holding && this.team(by) !== this.team(this.holding) && closing > TACKLE_SPEED
   }
 
   // One fixed step. Reports a goal once per turn, and the contacts that started, with their impact speed.
@@ -347,7 +407,10 @@ export class Table {
         const key = a < b ? `${a}|${b}` : `${b}|${a}`
         if (!knocked.has(key)) {
           knocked.add(key)
-          report('piece', this.knock(a, b))
+          const closing = this.knock(a, b)
+          report('piece', closing)
+          if (this.holding === a && this.tackles(b, closing)) this.tackle(b)
+          else if (this.holding === b && this.tackles(a, closing)) this.tackle(a)
         }
         return
       }
@@ -358,8 +421,8 @@ export class Table {
       if (isBall && piece) {
         const pv = this.preStep.get(piece)!
         report('ball', Math.hypot(bp.x - pv.x, bp.y, bp.z - pv.z))
-        this.deflected.add(piece)
-        if (this.lob && piece === this.lob.id) this.liftBall()
+        if (this.tackles(piece, Math.hypot(pv.x, pv.z))) this.tackle(piece)
+        else if (!this.holding && !this.catches(piece, Math.hypot(bp.x, bp.z), this.ball.translation().y)) this.unarmed.add(piece) // bounced off
       } else if (isBall) {
         // the floor makes the ball bounce, everything else is a rail
         if (other === this.floorCollider) report('ball', Math.abs(bp.y))
@@ -397,18 +460,6 @@ export class Table {
     const { x, y, z } = this.ball.translation()
     if (Math.abs(x) <= TABLE_HALF_LENGTH + BALL_RADIUS || Math.abs(z) >= GOAL_HALF_WIDTH || y >= GOAL_HEIGHT) return null
     return x < 0 ? 'cyan' : 'magenta'
-  }
-
-  // Lob: the first time the armed piece touches the ball, the ball leaves at LOB_ANGLE_DEG, same heading and speed.
-  private liftBall() {
-    const lob = this.lob!
-    this.lob = null
-    const v = this.ball.linvel()
-    const h = Math.hypot(v.x, v.z)
-    const [hx, hz] = h > 1e-3 ? [v.x / h, v.z / h] : [lob.dirX, lob.dirZ]
-    const speed = Math.hypot(v.x, v.y, v.z)
-    const a = (LOB_ANGLE_DEG * Math.PI) / 180
-    this.ball.setLinvel({ x: hx * speed * Math.cos(a), y: speed * Math.sin(a), z: hz * speed * Math.cos(a) }, true)
   }
 
   // Returns the closing speed of the hit.
@@ -506,12 +557,12 @@ export class Table {
     return this.calm >= SETTLE_STEPS
   }
 
-  runTurn(maxSteps = MAX_TURN_STEPS): { goalAgainst: Team | null; steps: number; captured: string | null } {
+  runTurn(maxSteps = MAX_TURN_STEPS): { goalAgainst: Team | null; steps: number; caught: string | null } {
     for (let steps = 1; steps <= maxSteps; steps++) {
       const { goalAgainst } = this.step()
-      if (goalAgainst || this.isSettled()) return { goalAgainst, steps, captured: this.captured }
+      if (goalAgainst || this.isSettled()) return { goalAgainst, steps, caught: this.caught }
     }
-    return { goalAgainst: null, steps: maxSteps, captured: this.captured }
+    return { goalAgainst: null, steps: maxSteps, caught: this.caught }
   }
 
   private static pose(b: RAPIER.RigidBody): Pose {

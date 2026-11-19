@@ -126,15 +126,15 @@ function endDrill(goalAgainst: Team | null) {
   const t = training!, d = DRILLS[t.i]
   busy = false
   goal = null
-  const caught = table.capturedBy
+  const caught = table.passedTo
   if (!goalAgainst && caught?.startsWith('cyan')) { // a pass: play on with the catcher
     t.shooter = caught
     t.passes++
   }
-  else if (drillMet(d, { goalAgainst, tipped: table.tippedIds(), passes: t.passes })) {
+  else if (drillMet(d, { goalAgainst, passes: t.passes, holder: table.holder })) {
     t.done = true
-    // on to the next drill by itself, once "Done!" has been read (the tip drill's line is longer)
-    setTimeout(() => { if (training === t) startDrill(t.i + 1) }, d.key === 'tip' ? DONE_LONG_MS : DONE_MS)
+    // on to the next drill by itself, once "Done!" has been read (the tackle drill's line is longer)
+    setTimeout(() => { if (training === t) startDrill(t.i + 1) }, d.key === 'tackle' ? DONE_LONG_MS : DONE_MS)
   }
   else {
     t.missed = true
@@ -229,12 +229,12 @@ function clearAim() {
 
 function endTurn(goalAgainst: Team | null) {
   if (training) return endDrill(goalAgainst)
-  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds(), captured: table.capturedBy })
+  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds(), captured: table.passedTo })
   if (out.winner) {
     sfx.win()
     scene.celebrate(out.winner)
   }
-  if (out.kickoff) table.reset()
+  if (out.kickoff) table.reset(match.turn)
   for (const id of out.standUp) table.standUp(id)
   busy = false
   goal = null

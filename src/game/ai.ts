@@ -1,5 +1,5 @@
 import type { Pose, Table } from '../physics/table'
-import { BALL_RADIUS, BASE_RADIUS, PIECES, TABLE_HALF_LENGTH } from './constants'
+import { BALL_DAMPING, KICK_SPEED, PIECES, TABLE_HALF_LENGTH } from './constants'
 import type { Shot, Team } from './types'
 
 export type Level = 'rookie' | 'pro' | 'legend'
@@ -17,50 +17,59 @@ const OFFSETS_DEG = [0, 4, -4, 8, -8]
 const POWERS = [0.7, 0.95, 0.45]
 const LOB_POWERS = [0.7, 0.95]
 const SHOOTERS = 3 // only the pieces nearest the ball
-// A caught pass is another shot; an interception hands the ball over. ponytail: blind to the passes left this turn.
+// Having the ball is worth a few metres; a caught pass is another shot. ponytail: blind to the passes left this turn.
+const POSSESSION = 15
 const PASS_BONUS = 12
-const INTERCEPTED = 10
+const PASS_ARRIVAL = 5 // m/s a pass should still have on reaching the teammate
 
 // The goal a team attacks: cyan defends -x.
 const attackX = (me: Team) => (me === 'cyan' ? TABLE_HALF_LENGTH : -TABLE_HALF_LENGTH)
-const roleOf = (id: string) => PIECES.find(p => p.id === id)!.role
 const dir = (deg: number) => ({ dirX: Math.cos((deg * Math.PI) / 180), dirZ: Math.sin((deg * Math.PI) / 180) })
 
-// Most promising first, taking the shooters in turn so a slow device that stops early has still tried each of them
-// and a lob. Per shooter: a straight shot at the "ghost" point that drives the ball goalward, a lob there, then the
-// remaining powers and angle offsets, at the ghost point before the ball centre.
-export function candidates(table: Table, canShoot: (id: string) => boolean, me: Team): Shot[] {
-  const ball = table.ballPose()
-  const gx = attackX(me)
-  const gd = Math.hypot(gx - ball.x, ball.z) || 1
-  const shooters = PIECES.filter(p => p.team === me && canShoot(p.id))
-    .map(p => ({ id: p.id, pose: table.piecePose(p.id) }))
-    .sort((a, b) => Math.hypot(a.pose.x - ball.x, a.pose.z - ball.z) - Math.hypot(b.pose.x - ball.x, b.pose.z - ball.z))
-    .slice(0, SHOOTERS)
-  const perShooter = shooters.map(({ id, pose }) => {
-    const reach = BASE_RADIUS[roleOf(id)] + BALL_RADIUS
-    // The holder kicks the ball itself: it aims at the goal, not at a point behind the ball.
-    const holds = table.capturedBy === id
-    const ghost = holds ? { x: gx, z: 0 } : { x: ball.x - ((gx - ball.x) / gd) * reach, z: ball.z - (-ball.z / gd) * reach }
-    const toward = (t: { x: number; z: number }) => (Math.atan2(t.z - pose.z, t.x - pose.x) * 180) / Math.PI
-    const ground = (t: { x: number; z: number }, off: number, power: number): Shot =>
-      ({ pieceId: id, ...dir(toward(t) + off), power, mode: 'ground' })
-    const list: Shot[] = [ground(ghost, 0, POWERS[0]), { pieceId: id, ...dir(toward(ghost)), power: LOB_POWERS[0], mode: 'lob' }]
-    for (const target of holds ? [ghost] : [ghost, ball])
-      for (const off of OFFSETS_DEG)
-        for (const power of POWERS) if (!(target === ghost && off === 0 && power === POWERS[0])) list.push(ground(target, off, power))
-    for (const power of LOB_POWERS.slice(1)) list.push({ pieceId: id, ...dir(toward(ghost)), power, mode: 'lob' })
-    return list
-  })
-  const out: Shot[] = []
-  for (let i = 0; perShooter.some(l => i < l.length); i++) for (const l of perShooter) if (i < l.length) out.push(l[i])
+const teamOf = (id: string) => PIECES.find(p => p.id === id)!.team
+const at = (from: { x: number; z: number }, to: { x: number; z: number }) => (Math.atan2(to.z - from.z, to.x - from.x) * 180) / Math.PI
+const interleave = <T>(lists: T[][]): T[] => {
+  const out: T[] = []
+  for (let i = 0; lists.some(l => i < l.length); i++) for (const l of lists) if (i < l.length) out.push(l[i])
   return out
 }
 
+// Most promising first, mixed so a slow device that stops early has still tried each kind.
+// With the ball: the holder shoots, lobs or passes. Without: the pieces nearest the ball slide at it, which tackles
+// its holder or picks a loose ball up.
+export function candidates(table: Table, canShoot: (id: string) => boolean, me: Team): Shot[] {
+  const h = table.holder
+  if (h && teamOf(h) === me && canShoot(h)) return kicks(table, h, me)
+  const target = h ? table.piecePose(h) : table.ballPose()
+  const sliders = PIECES.filter(p => p.team === me && canShoot(p.id))
+    .map(p => ({ id: p.id, pose: table.piecePose(p.id) }))
+    .sort((a, b) => Math.hypot(a.pose.x - target.x, a.pose.z - target.z) - Math.hypot(b.pose.x - target.x, b.pose.z - target.z))
+    .slice(0, SHOOTERS)
+  return interleave(sliders.map(({ id, pose }) => {
+    const list: Shot[] = []
+    for (const power of POWERS) for (const off of OFFSETS_DEG) list.push({ pieceId: id, ...dir(at(pose, target) + off), power, mode: 'ground' })
+    return list
+  }))
+}
+
+// The holder's kicks: at the goal (ground, then lobs), and soft passes that reach each standing teammate slowly
+// enough to be caught (the ball slows by BALL_DAMPING per second, so it covers (v0 - v) / BALL_DAMPING).
+function kicks(table: Table, id: string, me: Team): Shot[] {
+  const pose = table.piecePose(id), goal = { x: attackX(me), z: 0 }
+  const shots: Shot[] = [], lobs: Shot[] = [], passes: Shot[] = []
+  for (const power of POWERS) for (const off of OFFSETS_DEG) shots.push({ pieceId: id, ...dir(at(pose, goal) + off), power, mode: 'ground' })
+  for (const power of LOB_POWERS) lobs.push({ pieceId: id, ...dir(at(pose, goal)), power, mode: 'lob' })
+  for (const p of PIECES) {
+    if (p.team !== me || p.id === id || table.isTipped(p.id)) continue
+    const mate = table.piecePose(p.id), d = Math.hypot(mate.x - pose.x, mate.z - pose.z)
+    const power = Math.min(1, (BALL_DAMPING * d + PASS_ARRIVAL) / KICK_SPEED)
+    for (const k of [1, 0.85, 1.15]) passes.push({ pieceId: id, ...dir(at(pose, mate)), power: Math.min(1, power * k), mode: 'ground' })
+  }
+  return interleave([shots, passes, lobs])
+}
+
 // How good the table looks for `me` after a simulated shot.
-export function scoreOutcome(
-  table: Table, goalAgainst: Team | null, me: Team, tippedBefore: string[], ballBefore: Pose, captured: string | null = null,
-): number {
+export function scoreOutcome(table: Table, goalAgainst: Team | null, me: Team, tippedBefore: string[], ballBefore: Pose): number {
   if (goalAgainst) return goalAgainst === me ? -1000 : 1000
   const ball = table.ballPose()
   const gx = attackX(me)
@@ -71,7 +80,9 @@ export function scoreOutcome(
     if (tippedBefore.includes(id)) continue
     s += id.startsWith(me) ? -6 : 8
   }
-  if (captured) s += captured.startsWith(me) ? PASS_BONUS : -INTERCEPTED
+  const h = table.holder
+  if (h) s += teamOf(h) === me ? POSSESSION : -POSSESSION
+  if (table.passedTo) s += PASS_BONUS
   return s
 }
 
@@ -95,8 +106,8 @@ export function* think(
   for (let i = 0; i < list.length; i++) {
     const sim = table.clone()
     sim.shoot(list[i])
-    const { goalAgainst, captured } = sim.runTurn(AI_HORIZON)
-    const s = scoreOutcome(sim, goalAgainst, me, tippedBefore, ballBefore, captured)
+    const { goalAgainst } = sim.runTurn(AI_HORIZON)
+    const s = scoreOutcome(sim, goalAgainst, me, tippedBefore, ballBefore)
     sim.free()
     if (s > bestScore) [best, bestScore] = [list[i], s]
     if (i + 1 >= MIN_CANDIDATES && now() - start > BUDGET_MS) break
