@@ -118,3 +118,17 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   .menu { gap: 8px; }
   .end p { font-size: 30px; }
 }
+
+/* Strategy mode */
+.menu .modes button { padding: 8px 18px; font-size: 14px; border-color: #ffffff2a; box-shadow: none; opacity: 0.65; }
+.menu .modes button[aria-pressed="true"] { opacity: 1; border-color: #fff; box-shadow: 0 0 14px #ffffff66; }
+.plan { position: absolute; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); box-sizing: border-box; padding: 10px 14px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; background: #05050cd0; border: 2px solid var(--cyan); border-radius: 10px; pointer-events: auto; }
+.plan.magenta { border-color: var(--magenta); }
+.plan p { margin: 0; font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; }
+.plan small { grid-column: 1; font-size: 13px; opacity: 0.75; }
+.plan button { grid-row: 1 / span 2; grid-column: 2; }
+.cover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 16px; text-align: center; background: #05050cf2; pointer-events: auto; }
+.cover p { margin: 0; max-width: 520px; font-size: 24px; line-height: 1.4; text-transform: uppercase; }
+.cover.cyan p { color: var(--cyan); text-shadow: 0 0 14px var(--cyan); }
+.cover.magenta p { color: var(--magenta); text-shadow: 0 0 14px var(--magenta); }
+.rules p { font-size: 20px; }

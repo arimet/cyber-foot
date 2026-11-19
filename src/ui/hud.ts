@@ -1,6 +1,6 @@
 import type { Level } from '../game/ai'
 import type { DrillKey } from '../game/drills'
-import { MAX_PASSES } from '../game/constants'
+import { MAX_ORDERS, MAX_PASSES } from '../game/constants'
 import type { ShotMode, Team } from '../game/types'
 import { getLang, setLang, t } from './i18n'
 
@@ -17,7 +17,12 @@ export type HudState = {
   menu: boolean
   training: { key: DrillKey | 'rules'; done: boolean; missed: boolean; passed: boolean } | null
   trained: boolean // finished the training once: its menu button is no longer pushed
+  gameMode: GameMode
+  // Strategy mode: the team giving orders (behind the hand-over card first, in a two-player game), or the round playing
+  strategy: { team: Team; orders: number; cover: boolean } | { playing: true } | null
 }
+
+export type GameMode = 'classic' | 'strategy'
 
 const NAME: Record<Team, string> = { cyan: 'Cyan', magenta: 'Magenta' }
 
@@ -27,6 +32,7 @@ export function createHud(
   h: {
     onToggleMode(): void; onReplay(): void; onMenu(): void; onStart(vs: 'human' | Level): void; onView(): void; onMute(): void
     onTraining(): void; onSkip(): void; onNext(): void; onPlayMatch(): void
+    onGameMode(m: GameMode): void; onLaunch(): void; onReady(): void
   },
 ) {
   root.innerHTML = `
@@ -44,9 +50,12 @@ export function createHud(
     <div class="end" hidden><p></p><div class="final"><b class="cyan"></b> – <b class="magenta"></b></div><div class="row"><button type="button" data-a="replay"></button><button type="button" data-a="menu"></button></div></div>
     <div class="drill" hidden aria-live="polite"><p></p><small></small><div class="row"><button type="button" data-a="skip"></button><button type="button" data-a="next"></button><button type="button" data-a="drill-menu"></button></div></div>
     <div class="rules" hidden><p></p><div class="row"><button type="button" data-a="play"></button><button type="button" data-a="rules-menu"></button></div></div>
+    <div class="plan" hidden><p></p><small></small><button type="button" data-a="launch"></button></div>
+    <div class="cover" hidden><p></p><button type="button" data-a="ready"></button></div>
     <div class="hand" hidden aria-hidden="true">👆</div>
     <div class="menu" hidden>
       <h1>cyber-foot</h1>
+      <div class="row modes" role="group"><button type="button" data-gm="classic" data-t="classic"></button><button type="button" data-gm="strategy" data-t="strategy"></button></div>
       <button type="button" data-a="training" data-t="training"></button>
       <button type="button" data-vs="human" data-t="twoPlayers"></button>
       <p data-t="vsAi"></p>
@@ -82,6 +91,10 @@ export function createHud(
   q('[data-a="next"]').addEventListener('click', h.onNext)
   q('[data-a="play"]').addEventListener('click', h.onPlayMatch)
   const drill = q<HTMLDivElement>('.drill'), rules = q<HTMLDivElement>('.rules'), hand = q<HTMLDivElement>('.hand')
+  q('[data-a="launch"]').addEventListener('click', h.onLaunch)
+  q('[data-a="ready"]').addEventListener('click', h.onReady)
+  for (const b of root.querySelectorAll<HTMLButtonElement>('[data-gm]')) b.addEventListener('click', () => h.onGameMode(b.dataset.gm as GameMode))
+  const plan = q<HTMLDivElement>('.plan'), cover = q<HTMLDivElement>('.cover')
   for (const b of root.querySelectorAll<HTMLButtonElement>('[data-vs]'))
     b.addEventListener('click', () => h.onStart(b.dataset.vs as 'human' | Level))
 
@@ -91,9 +104,24 @@ export function createHud(
     for (const el of root.querySelectorAll<HTMLElement>('[data-t]')) el.textContent = d[el.dataset.t as 'rotate'] as string
     for (const team of ['cyan', 'magenta'] as const) q(`[data-s="${team}"]`).textContent = String(s.score[team])
     const turn = q<HTMLDivElement>('.turn')
-    turn.textContent = s.winner || s.menu || s.training ? '' : s.thinking ? d.thinking(NAME[s.turn])
-      : s.passes ? d.passTurn(NAME[s.turn], s.passes, MAX_PASSES) : d.toPlay(NAME[s.turn])
+    const st = s.strategy
+    turn.textContent = s.winner || s.menu || (s.training && !st) ? '' : st ? ('playing' in st ? d.playing : '')
+      : s.thinking ? d.thinking(NAME[s.turn]) : s.passes ? d.passTurn(NAME[s.turn], s.passes, MAX_PASSES) : d.toPlay(NAME[s.turn])
     turn.className = `turn ${s.turn}`
+    const planning = st && !('playing' in st) ? st : null
+    plan.hidden = !planning || planning.cover || s.menu || !!s.winner
+    cover.hidden = !planning?.cover || s.menu
+    if (planning) {
+      plan.className = `plan ${planning.team}`
+      q('.plan p').textContent = d.planTurn(NAME[planning.team], planning.orders, MAX_ORDERS)
+      q('.plan small').textContent = d.planHint
+      q('.cover p').textContent = d.cover(NAME[planning.team])
+      cover.className = `cover ${planning.team}`
+    }
+    q('[data-a="launch"]').textContent = d.launch
+    q<HTMLButtonElement>('[data-a="launch"]').disabled = !planning?.orders
+    q('[data-a="ready"]').textContent = d.ready
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-gm]')) b.setAttribute('aria-pressed', String(b.dataset.gm === s.gameMode))
     // both shots on show, the chosen one lit: a switch, not a label to decode
     q('.shot-label').textContent = d.shot
     for (const b of modes) {
@@ -123,7 +151,7 @@ export function createHud(
       q<HTMLButtonElement>('[data-a="skip"]').hidden = tr.done
       q<HTMLButtonElement>('[data-a="next"]').hidden = !tr.done
     }
-    q('.rules p').textContent = d.rules
+    q('.rules p').textContent = s.gameMode === 'strategy' ? d.strategyRules : d.rules
     q('[data-a="skip"]').textContent = d.skip
     q('[data-a="next"]').textContent = d.next
     q('[data-a="play"]').textContent = d.playMatch

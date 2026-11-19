@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { candidates, runThink, scoreOutcome, think } from '../src/game/ai'
+import { candidates, planOrders, runThink, scoreOutcome, slidePower, think } from '../src/game/ai'
 import { BALL_RADIUS, PIECES } from '../src/game/constants'
 import { Table } from '../src/physics/table'
 
@@ -123,6 +123,65 @@ describe('AI', () => {
     openGoal()
     const before = JSON.stringify([table.ballPose(), ...PIECES.map(p => table.piecePose(p.id))])
     runThink(think(table, magenta, 'magenta', 'pro', () => 0.5))
+    expect(JSON.stringify([table.ballPose(), ...PIECES.map(p => table.piecePose(p.id))])).toBe(before)
+  })
+})
+
+describe('Strategy AI', () => {
+  beforeEach(async () => {
+    table = await Table.create()
+  })
+  const all = () => true
+  const angleTo = (s: { pieceId: string; dirX: number; dirZ: number }, t: { x: number; z: number }) => {
+    const p = table.piecePose(s.pieceId)
+    const d = Math.atan2(s.dirZ, s.dirX) - Math.atan2(t.z - p.z, t.x - p.x)
+    return Math.abs(Math.atan2(Math.sin(d), Math.cos(d)))
+  }
+
+  it('gives at most four orders, to distinct pieces of its own that may play', () => {
+    const orders = runThink(planOrders(table, 'magenta', id => id !== 'magenta-light2', 'pro', () => 0.5))
+    expect(orders.length).toBeGreaterThan(0)
+    expect(orders.length).toBeLessThanOrEqual(4)
+    expect(new Set(orders.map(o => o.pieceId)).size).toBe(orders.length)
+    for (const o of orders) {
+      expect(o.pieceId.startsWith('magenta')).toBe(true)
+      expect(o.pieceId).not.toBe('magenta-light2')
+    }
+  })
+
+  it('with the ball, the holder kicks', () => {
+    table.reset('magenta')
+    const orders = runThink(planOrders(table, 'magenta', all, 'pro', () => 0.5))
+    expect(orders.some(o => o.pieceId === 'magenta-light1')).toBe(true)
+  })
+
+  it('without the ball, a piece runs at the holder', () => {
+    const orders = runThink(planOrders(table, 'magenta', all, 'legend', () => 0.5)) // cyan-light1 holds
+    const h = table.piecePose('cyan-light1')
+    expect(orders.some(o => angleTo(o, h) < 0.05 && o.power > 0.3)).toBe(true)
+  })
+
+  it('a loose ball is chased hard enough to be reached', () => {
+    park()
+    table.placePiece('magenta-light1', 0, 0)
+    table.placeBall(-5, BALL_RADIUS, 0)
+    const orders = runThink(planOrders(table, 'magenta', all, 'legend', () => 0.5))
+    const chase = orders.find(o => o.pieceId === 'magenta-light1')!
+    expect(angleTo(chase, { x: -5, z: 0 })).toBeLessThan(0.05)
+    table.shoot(chase)
+    table.runTurn()
+    expect(table.holder).toBe('magenta-light1')
+  })
+
+  it('slidePower grows with the distance and is capped at full power', () => {
+    expect(slidePower('light', 2)).toBeLessThan(slidePower('light', 6))
+    expect(slidePower('heavy', 4)).toBeGreaterThan(slidePower('light', 4))
+    expect(slidePower('heavy', 50)).toBe(1)
+  })
+
+  it('planning leaves the real table untouched', () => {
+    const before = JSON.stringify([table.ballPose(), ...PIECES.map(p => table.piecePose(p.id))])
+    runThink(planOrders(table, 'cyan', all, 'pro', () => 0.5))
     expect(JSON.stringify([table.ballPose(), ...PIECES.map(p => table.piecePose(p.id))])).toBe(before)
   })
 })

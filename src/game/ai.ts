@@ -1,6 +1,6 @@
 import type { Pose, Table } from '../physics/table'
-import { BALL_DAMPING, KICK_SPEED, PIECES, TABLE_HALF_LENGTH } from './constants'
-import type { Shot, Team } from './types'
+import { BALL_DAMPING, BASE_RADIUS, KICK_SPEED, MASS, MAX_IMPULSE, MAX_ORDERS, PIECES, SHOT_BOOST, TABLE_HALF_LENGTH } from './constants'
+import type { Role, Shot, Team } from './types'
 
 export type Level = 'rookie' | 'pro' | 'legend'
 
@@ -127,9 +127,65 @@ function blur(shot: Shot, level: Level, rng: () => number): Shot {
   return { ...shot, ...dir((Math.atan2(shot.dirZ, shot.dirX) * 180) / Math.PI + turn), power }
 }
 
-export function runThink(gen: Generator<void, Shot>): Shot {
+export function runThink<T>(gen: Generator<void, T>): T {
   for (;;) {
     const r = gen.next()
     if (r.done) return r.value
   }
+}
+
+// Slide speed (m/s) to distance covered (m) on an open floor, measured: every role covers the same ground at the
+// same speed. Beyond the last point the distance is extrapolated along the last segment.
+const SLIDE: [number, number][] = [[0, 0], [1.6, 1.04], [3.2, 3.09], [4.8, 5.58], [6.4, 8.31], [8, 11.19], [9.6, 14.17]]
+
+// The power that slides a piece of that role about d metres.
+export function slidePower(role: Role, d: number): number {
+  let i = 1
+  while (i < SLIDE.length - 1 && SLIDE[i][1] < d) i++
+  const [[v0, d0], [v1, d1]] = [SLIDE[i - 1], SLIDE[i]]
+  const speed = v0 + ((d - d0) * (v1 - v0)) / (d1 - d0)
+  return Math.max(0.05, Math.min(1, (speed * MASS[role]) / (MAX_IMPULSE * SHOT_BOOST[role])))
+}
+
+const TACKLE_EXTRA = 0.25 // power on top of reaching the holder: a tackle must land hard
+const SUPPORT_RUN = 3 // m a supporting piece runs up toward the goal it attacks
+
+// Strategy mode: the AI's orders for a round, made without knowing the other team's. With the ball, the holder kicks
+// (picked by simulation, as in a match) and two pieces run up in support. Without it, the two pieces nearest the
+// ball run at it (a tackle on its holder, or a loose ball picked up) and a third guards the way to its own goal.
+// The keeper stays home.
+export function* planOrders(
+  table: Table, me: Team, canOrder: (id: string) => boolean, level: Level, rng: () => number = Math.random,
+): Generator<void, Shot[]> {
+  const role = (id: string) => PIECES.find(p => p.id === id)!.role
+  const free = PIECES.filter(p => p.team === me && canOrder(p.id) && p.role !== 'keeper').map(p => p.id)
+  const slide = (id: string, to: { x: number; z: number }, extra = 0): Shot => {
+    const p = table.piecePose(id), d = Math.hypot(to.x - p.x, to.z - p.z)
+    return blur({ pieceId: id, ...dir(at(p, to)), power: Math.min(1, slidePower(role(id), d) + extra), mode: 'ground' }, level, rng)
+  }
+  const nearest = (ids: string[], t: { x: number; z: number }) =>
+    [...ids].sort((a, b) => Math.hypot(table.piecePose(a).x - t.x, table.piecePose(a).z - t.z) - Math.hypot(table.piecePose(b).x - t.x, table.piecePose(b).z - t.z))
+  const h = table.holder, orders: Shot[] = []
+  if (h && teamOf(h) === me && canOrder(h)) {
+    orders.push(yield* think(table, id => id === h, me, level, rng))
+    const forward = Math.sign(attackX(me))
+    for (const id of nearest(free.filter(id => id !== h), table.piecePose(h)).slice(0, 2)) {
+      const p = table.piecePose(id)
+      orders.push(slide(id, { x: Math.max(-8, Math.min(8, p.x + forward * SUPPORT_RUN)), z: p.z }))
+    }
+  } else {
+    const target = h ? table.piecePose(h) : table.ballPose()
+    const [a, b, guard] = nearest(free, target)
+    // aim a base's width past the target, so the piece arrives on it; a holder is run through, harder
+    for (const id of [a, b].filter(Boolean)) {
+      const p = table.piecePose(id), d = Math.hypot(target.x - p.x, target.z - p.z)
+      const past = { x: p.x + ((target.x - p.x) / d) * (d + BASE_RADIUS[role(id)]), z: p.z + ((target.z - p.z) / d) * (d + BASE_RADIUS[role(id)]) }
+      orders.push(slide(id, past, h ? TACKLE_EXTRA : 0))
+    }
+    if (guard) {
+      const home = { x: -attackX(me), z: 0 }
+      orders.push(slide(guard, { x: (target.x + home.x) / 2, z: target.z / 2 }))
+    }
+  }
+  return orders.slice(0, MAX_ORDERS)
 }

@@ -55,6 +55,8 @@ export class GameScene {
   private readonly arrowMat = new THREE.MeshBasicMaterial({ color: LINE, transparent: true, opacity: 0.9 })
   private readonly shaft: THREE.Mesh
   private readonly head: THREE.Mesh
+  private readonly plans: THREE.Group[] = [] // Strategy mode: the arrows of the orders given so far
+  private readonly planMat = new THREE.MeshBasicMaterial({ color: LINE, transparent: true, opacity: 0.6 })
   private readonly ray = new THREE.Raycaster()
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private selected: string | null = null
@@ -358,6 +360,27 @@ export class GameScene {
     this.shaft.scale.x = len
     this.head.position.x = len
     this.arrowMat.color.setHex(LINE).lerp(new THREE.Color(0xff2d55), power)
+  }
+
+  // Strategy mode: one arrow per order of the team planning, in its colour. An empty list hides them.
+  setPlans(team: Team, list: { x: number; z: number; dirX: number; dirZ: number; power: number; role: Role }[]): void {
+    this.planMat.color.setHex(TEAM_COLOR[team])
+    while (this.plans.length < list.length) {
+      const g = new THREE.Group()
+      g.add(new THREE.Mesh(this.shaft.geometry, this.planMat), new THREE.Mesh(this.head.geometry, this.planMat))
+      this.scene.add(g)
+      this.plans.push(g)
+    }
+    this.plans.forEach((g, i) => {
+      const p = list[i]
+      g.visible = !!p
+      if (!p) return
+      const len = arrowLength(p.power, p.role)
+      g.position.set(p.x, 0.025, p.z)
+      g.rotation.y = -Math.atan2(p.dirZ, p.dirX)
+      g.children[0].scale.x = len
+      g.children[1].position.x = len
+    })
   }
 
   render(t: number): void {

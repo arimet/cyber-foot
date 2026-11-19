@@ -36,6 +36,7 @@ export const MAX_PULL = 3
 
 export const GOALS_TO_WIN = 5
 export const MAX_PASSES = 3 // per turn: the shot after the third pass is the last
+export const MAX_ORDERS = 4 // Strategy mode: orders per team and round, one per piece
 
 const SLOTS: { slot: string; role: Role; x: number; z: number }[] = [
   { slot: 'keeper', role: 'keeper', x: -8.5, z: 0 },
