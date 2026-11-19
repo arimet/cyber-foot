@@ -1,5 +1,6 @@
 import type { Pose, Table } from '../physics/table'
-import { BALL_DAMPING, BASE_RADIUS, KICK_SPEED, MASS, MAX_IMPULSE, MAX_ORDERS, PIECES, SHOT_BOOST, TABLE_HALF_LENGTH } from './constants'
+import { segDist } from './arena'
+import { BALL_DAMPING, BALL_RADIUS, BASE_RADIUS, KICK_SPEED, MASS, MAX_IMPULSE, MAX_ORDERS, PIECES, SHOT_BOOST, TABLE_HALF_LENGTH } from './constants'
 import type { Role, Shot, Team } from './types'
 
 export type Level = 'rookie' | 'pro' | 'legend'
@@ -21,6 +22,12 @@ const SHOOTERS = 3 // only the pieces nearest the ball
 const POSSESSION = 15
 const PASS_BONUS = 12
 const PASS_ARRIVAL = 5 // m/s a pass should still have on reaching the teammate
+// Runs without the ball: worth SUPPORT per metre that the best open teammate stands ahead of the holder, up to OPEN_CAP.
+const SUPPORT = 4
+const OPEN_CAP = 6
+const LANE_MARGIN = 0.2
+const RUN_AHEAD = 4
+const RUN_LANES = [0, -3, 3]
 
 // The goal a team attacks: cyan defends -x.
 const attackX = (me: Team) => (me === 'cyan' ? TABLE_HALF_LENGTH : -TABLE_HALF_LENGTH)
@@ -35,11 +42,11 @@ const interleave = <T>(lists: T[][]): T[] => {
 }
 
 // Most promising first, mixed so a slow device that stops early has still tried each kind.
-// With the ball: the holder shoots, lobs or passes. Without: the pieces nearest the ball slide at it, which tackles
+// With the ball: the holder shoots, lobs or passes, or a teammate runs into space. Without: the pieces nearest the ball slide at it, which tackles
 // its holder or picks a loose ball up.
 export function candidates(table: Table, canShoot: (id: string) => boolean, me: Team): Shot[] {
   const h = table.holder
-  if (h && teamOf(h) === me && canShoot(h)) return kicks(table, h, me)
+  if (h && teamOf(h) === me && canShoot(h)) return withBall(table, h, me, canShoot)
   const target = h ? table.piecePose(h) : table.ballPose()
   const sliders = PIECES.filter(p => p.team === me && canShoot(p.id))
     .map(p => ({ id: p.id, pose: table.piecePose(p.id) }))
@@ -54,9 +61,19 @@ export function candidates(table: Table, canShoot: (id: string) => boolean, me: 
 
 // The holder's kicks: at the goal (ground, then lobs), and soft passes that reach each standing teammate slowly
 // enough to be caught (the ball slows by BALL_DAMPING per second, so it covers (v0 - v) / BALL_DAMPING).
-function kicks(table: Table, id: string, me: Team): Shot[] {
+// And the two field teammates nearest the holder run RUN_AHEAD metres up, on the left, in the middle or on the right.
+function withBall(table: Table, id: string, me: Team, canShoot: (id: string) => boolean): Shot[] {
   const pose = table.piecePose(id), goal = { x: attackX(me), z: 0 }
-  const shots: Shot[] = [], lobs: Shot[] = [], passes: Shot[] = []
+  const shots: Shot[] = [], lobs: Shot[] = [], passes: Shot[] = [], moves: Shot[] = []
+  const runners = PIECES.filter(p => p.team === me && p.id !== id && p.role !== 'keeper' && canShoot(p.id))
+    .map(p => ({ ...p, pose: table.piecePose(p.id) }))
+    .sort((a, b) => Math.hypot(a.pose.x - pose.x, a.pose.z - pose.z) - Math.hypot(b.pose.x - pose.x, b.pose.z - pose.z))
+    .slice(0, 2)
+  for (const z of RUN_LANES) for (const r of runners) {
+    const spot = { x: Math.max(-8, Math.min(8, pose.x + Math.sign(goal.x) * RUN_AHEAD)), z }
+    const d = Math.hypot(spot.x - r.pose.x, spot.z - r.pose.z)
+    moves.push({ pieceId: r.id, ...dir(at(r.pose, spot)), power: slidePower(r.role, d), mode: 'ground' })
+  }
   for (const power of POWERS) for (const off of OFFSETS_DEG) shots.push({ pieceId: id, ...dir(at(pose, goal) + off), power, mode: 'ground' })
   for (const power of LOB_POWERS) lobs.push({ pieceId: id, ...dir(at(pose, goal)), power, mode: 'lob' })
   for (const p of PIECES) {
@@ -65,7 +82,27 @@ function kicks(table: Table, id: string, me: Team): Shot[] {
     const power = Math.min(1, (BALL_DAMPING * d + PASS_ARRIVAL) / KICK_SPEED)
     for (const k of [1, 0.85, 1.15]) passes.push({ pieceId: id, ...dir(at(pose, mate)), power: Math.min(1, power * k), mode: 'ground' })
   }
-  return interleave([shots, passes, lobs])
+  return interleave([shots, passes, moves, lobs])
+}
+
+// How far ahead of the holder its best open teammate stands (capped): a field piece nearer the goal they attack,
+// with no opponent across the passing lane.
+function openAhead(table: Table, h: string, me: Team): number {
+  const hp = table.piecePose(h), f = Math.sign(attackX(me))
+  let best = 0
+  for (const p of PIECES) {
+    if (p.team !== me || p.id === h || p.role === 'keeper' || table.isTipped(p.id)) continue
+    const mp = table.piecePose(p.id), ahead = (mp.x - hp.x) * f
+    if (ahead <= best) continue
+    const lane = { ax: hp.x, az: hp.z, bx: mp.x, bz: mp.z, r: 0 }
+    const clear = PIECES.every(o => {
+      if (o.team === me || table.isTipped(o.id)) return true
+      const op = table.piecePose(o.id)
+      return segDist(op.x, op.z, lane) > BASE_RADIUS[o.role] + BALL_RADIUS + LANE_MARGIN
+    })
+    if (clear) best = Math.min(ahead, OPEN_CAP)
+  }
+  return best
 }
 
 // How good the table looks for `me` after a simulated shot.
@@ -81,7 +118,7 @@ export function scoreOutcome(table: Table, goalAgainst: Team | null, me: Team, t
     s += id.startsWith(me) ? -6 : 8
   }
   const h = table.holder
-  if (h) s += teamOf(h) === me ? POSSESSION : -POSSESSION
+  if (h) s += teamOf(h) === me ? POSSESSION + SUPPORT * openAhead(table, h, me) : -POSSESSION
   if (table.passedTo) s += PASS_BONUS
   return s
 }

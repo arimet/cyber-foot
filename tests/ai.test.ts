@@ -38,13 +38,31 @@ describe('AI', () => {
     expect(new Set(first.map(s => s.pieceId)).size).toBe(3)
   })
 
-  it('with the ball, only the holder plays, and the first dozen candidates hold a shot, a pass and a lob', () => {
-    const list = candidates(table, id => id.startsWith('cyan'), 'cyan')
-    expect(new Set(list.map(s => s.pieceId))).toEqual(new Set(['cyan-light1']))
+  it('with the ball, the first dozen candidates hold a shot, a pass, a lob and a teammate moving', () => {
+    const list = candidates(table, id => id.startsWith('cyan'), 'cyan') // cyan-light1 holds at the centre
     const first = list.slice(0, 12)
     expect(first.some(s => s.mode === 'lob')).toBe(true)
-    expect(first.some(s => s.dirX < 0)).toBe(true) // a pass back
+    expect(first.some(s => s.pieceId === 'cyan-light1' && s.dirX < 0)).toBe(true) // a pass back
+    expect(first[0].pieceId).toBe('cyan-light1')
     expect(first[0].dirX).toBeGreaterThan(0.9) // at the goal first
+    expect(first.some(s => s.pieceId !== 'cyan-light1')).toBe(true) // a teammate runs
+    expect(list.every(s => s.pieceId !== 'cyan-keeper' || s.pieceId === table.holder)).toBe(true) // the keeper stays home
+  })
+
+  it('scoreOutcome likes an open teammate ahead of the holder', () => {
+    park()
+    table.placePiece('magenta-heavy1', 6, -5) // the other runners behind the play
+    table.placePiece('magenta-heavy2', 6, 5)
+    table.placePiece('magenta-light1', -2, 0)
+    table.placePiece('magenta-light2', 2, 0)
+    table.giveBall('magenta-light1', -1, 0)
+    const ball = table.ballPose(), behind = scoreOutcome(table, null, 'magenta', [], ball)
+    table.placePiece('magenta-light2', -6, 2) // ahead (magenta attacks -x), lane clear
+    const open = scoreOutcome(table, null, 'magenta', [], ball)
+    table.placePiece('cyan-heavy1', -4, 1) // now an opponent stands in the lane
+    const blocked = scoreOutcome(table, null, 'magenta', [], ball)
+    expect(open).toBeGreaterThan(behind + 10)
+    expect(open).toBeGreaterThan(blocked + 10)
   })
 
   it('a piece holding the ball shoots toward the goal, even with the ball behind it', () => {
