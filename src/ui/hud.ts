@@ -1,6 +1,6 @@
 import type { Level } from '../game/ai'
 import type { DrillKey } from '../game/drills'
-import { MAX_ORDERS, MAX_PASSES } from '../game/constants'
+import { MAX_ACTIONS, MAX_ORDERS } from '../game/constants'
 import type { ShotMode, Team } from '../game/types'
 import { getLang, setLang, t } from './i18n'
 
@@ -13,7 +13,7 @@ export type HudState = {
   winner: Team | null
   busy: boolean
   thinking: boolean
-  passes: number // passes made this turn: the turn goes on
+  actions: number // actions played this turn, the team keeping the ball: the turn goes on
   menu: boolean
   training: { key: DrillKey | 'rules'; done: boolean; missed: boolean; passed: boolean } | null
   trained: boolean // finished the training once: its menu button is no longer pushed
@@ -106,7 +106,7 @@ export function createHud(
     const turn = q<HTMLDivElement>('.turn')
     const st = s.strategy
     turn.textContent = s.winner || s.menu || (s.training && !st) ? '' : st ? ('playing' in st ? d.playing : '')
-      : s.thinking ? d.thinking(NAME[s.turn]) : s.passes ? d.passTurn(NAME[s.turn], s.passes, MAX_PASSES) : d.toPlay(NAME[s.turn])
+      : s.thinking ? d.thinking(NAME[s.turn]) : s.actions ? d.keepTurn(NAME[s.turn], s.actions + 1, MAX_ACTIONS) : d.toPlay(NAME[s.turn])
     turn.className = `turn ${s.turn}`
     const planning = st && !('playing' in st) ? st : null
     plan.hidden = !planning || planning.cover || s.menu || !!s.winner

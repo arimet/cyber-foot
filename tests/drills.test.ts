@@ -10,7 +10,7 @@ const fire = async (d: Drill, angle: number, power: number, mode: ShotMode = 'gr
   setUpDrill(t, d)
   t.shoot({ pieceId: d.shooter, dirX: Math.cos(angle), dirZ: Math.sin(angle), power, mode })
   const r = t.runTurn()
-  return drillMet(d, { goalAgainst: r.goalAgainst, passes: 0, holder: t.holder, orders: 1 })
+  return drillMet(d, { goalAgainst: r.goalAgainst, actions: 0, holder: t.holder, orders: 1 })
 }
 
 // The fox passes; if the cat catches it, the cat shoots straight at the goal's middle.
@@ -22,7 +22,7 @@ const passThenShoot = async (angle: number, power: number) => {
   if (t.passedTo !== 'cyan-light2') return false
   const c = t.piecePose('cyan-light2'), d = Math.hypot(10 - c.x, c.z)
   t.shoot({ pieceId: 'cyan-light2', dirX: (10 - c.x) / d, dirZ: -c.z / d, power: 0.8, mode: 'ground' })
-  return drillMet(pass, { goalAgainst: t.runTurn().goalAgainst, passes: 1, holder: t.holder, orders: 1 })
+  return drillMet(pass, { goalAgainst: t.runTurn().goalAgainst, actions: 1, holder: t.holder, orders: 1 })
 }
 
 // some shot among these angles (rad) and powers meets the drill
@@ -66,7 +66,7 @@ describe('drills', () => {
   })
 
   it('the pass drill needs a pass: a goal straight from the fox does not count', () => {
-    expect(drillMet(pass, { goalAgainst: 'magenta', passes: 0, holder: null, orders: 1 })).toBe(false)
+    expect(drillMet(pass, { goalAgainst: 'magenta', actions: 0, holder: null, orders: 1 })).toBe(false)
   })
 
   it('the tackle drill: a hard run at the cat wins the ball off it, a soft one does not', async () => {
@@ -75,7 +75,7 @@ describe('drills', () => {
   })
 
   it('an own goal is a miss', () => {
-    expect(drillMet(empty, { goalAgainst: 'cyan', passes: 0, holder: null, orders: 1 })).toBe(false)
+    expect(drillMet(empty, { goalAgainst: 'cyan', actions: 0, holder: null, orders: 1 })).toBe(false)
   })
 
   it('only the drill pieces are on the pitch', async () => {
@@ -94,7 +94,7 @@ describe('strategy drills', () => {
     setUpDrill(t, d)
     t.shootAll([...mine, ...(d.script ?? [])])
     const r = t.runTurn()
-    return drillMet(d, { goalAgainst: r.goalAgainst, passes: 0, holder: t.holder, orders: mine.length })
+    return drillMet(d, { goalAgainst: r.goalAgainst, actions: 0, holder: t.holder, orders: mine.length })
   }
   const toward = (id: string, from: { x: number; z: number }, to: { x: number; z: number }, power: number): Shot => {
     const d = Math.hypot(to.x - from.x, to.z - from.z)
@@ -108,7 +108,7 @@ describe('strategy drills', () => {
     let met = false
     for (const a of range(-0.35, -0.12, 5)) if (!met) met = await play(orders, [kick(a), run])
     expect(met).toBe(true)
-    expect(drillMet(orders, { goalAgainst: 'magenta', passes: 0, holder: null, orders: 1 })).toBe(false)
+    expect(drillMet(orders, { goalAgainst: 'magenta', actions: 0, holder: null, orders: 1 })).toBe(false)
     expect(fox).toBeDefined()
   })
 

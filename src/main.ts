@@ -2,7 +2,7 @@ import './style.css'
 import { audioRunning, isMuted, setMuted, sfx, unlockAudio } from './audio/sfx'
 import { type Level, planOrders, think } from './game/ai'
 import { aimFromDrag } from './game/aim'
-import { BASE_RADIUS, MAX_TURN_STEPS, PIECES } from './game/constants'
+import { BASE_RADIUS, MAX_ACTIONS, MAX_TURN_STEPS, PIECES } from './game/constants'
 import { DRILLS, drillMet, setUpDrill, STRATEGY_DRILLS } from './game/drills'
 import { Match } from './game/match'
 import { Strategy } from './game/strategy'
@@ -37,7 +37,7 @@ let opponent: 'human' | Level | null = null // null: start menu
 let close = true // camera follows the ball, zoomed in
 let down = new Set<string>() // pieces lying down, to hear new falls
 // Training: the drill under way (DRILLS.length is the closing rules card), instead of the match rules.
-let training: { i: number; done: boolean; missed: boolean; shooter: string; passes: number } | null = null
+let training: { i: number; done: boolean; missed: boolean; shooter: string; actions: number } | null = null
 let handDone = false // the ghost hand shows on the first drill until the player first grabs the piece
 const TRAINED_KEY = 'cyber-foot:trained'
 const DONE_MS = 1200, DONE_LONG_MS = 3500 // how long "Done!" shows before the next drill
@@ -101,12 +101,13 @@ const thinking = () => !!aiThought || !!aiAim || !!aiPlan
 const refresh = () => {
   const game = strat && !training ? strat : match
   scene.setStunned(game.stunned)
-  scene.setReceiver(training ? (training.passes ? training.shooter : null) : strat ? null : match.receiver)
+  // the ball's holder glows while its team plays on
+  scene.setReceiver((training ? training.actions : strat ? 0 : match.actions) ? table.holder : null)
   const list = drills()
   hud.update({ muted: isMuted(), close, score: game.score, turn: planning?.team ?? (aiPlan ? AI_TEAM : match.turn), mode, winner: game.winner,
-    busy, thinking: thinking(), menu: !opponent, passes: strat ? 0 : match.passes,
+    busy, thinking: thinking(), menu: !opponent, actions: strat ? 0 : match.actions,
     training: training && {
-      key: training.i < list.length ? list[training.i].key : 'rules', done: training.done, missed: training.missed, passed: training.passes > 0,
+      key: training.i < list.length ? list[training.i].key : 'rules', done: training.done, missed: training.missed, passed: training.actions > 0,
     },
     trained, gameMode,
     strategy: !strat ? null : planning ? { team: planning.team, orders: strat.orders(planning.team).length, cover: planning.cover }
@@ -172,7 +173,7 @@ function newGame(vs: 'human' | Level | null) {
 // Sets drill i up from scratch, or shows the rules card after the last one.
 function startDrill(i: number) {
   const list = drills()
-  training = { i, done: false, missed: false, shooter: list[i]?.shooter ?? '', passes: 0 }
+  training = { i, done: false, missed: false, shooter: list[i]?.shooter ?? '', actions: 0 }
   busy = false
   goal = null
   launching = null
@@ -198,20 +199,16 @@ function endDrill(goalAgainst: Team | null) {
   const t = training!, d = drills()[t.i]
   busy = false
   goal = null
-  const caught = strat ? null : table.passedTo // Strategy: no extra shot after a pass
-  if (!goalAgainst && caught?.startsWith('cyan')) { // a pass: play on with the catcher
-    t.shooter = caught
-    t.passes++
-  }
-  else if (drillMet(d, { goalAgainst, passes: t.passes, holder: table.holder, orders: strat ? roundOrders : 1 })) {
+  if (drillMet(d, { goalAgainst, actions: t.actions, holder: table.holder, orders: strat ? roundOrders : 1 })) {
     t.done = true
     // on to the next drill by itself, once "Done!" has been read (the tackle drill's line is longer)
     setTimeout(() => { if (training === t) startDrill(t.i + 1) }, d.key === 'tackle' ? DONE_LONG_MS : DONE_MS)
   }
+  // Classic: cyan kept the ball, so it plays on (a Strategy drill is a single round)
+  else if (!strat && !goalAgainst && table.holder?.startsWith('cyan') && t.actions + 1 < MAX_ACTIONS) t.actions++
   else {
     t.missed = true
-    t.shooter = d.shooter
-    t.passes = 0
+    t.actions = 0
     setUpDrill(table, d)
   }
   if (strat && !t.done) {
@@ -223,7 +220,10 @@ function endDrill(goalAgainst: Team | null) {
 
 const canShoot = (id: string) => {
   if (strat) return !!planning && !planning.cover && strat.canOrder(planning.team, id) && (!training || id in (drills()[training.i]?.pieces ?? {}))
-  return training ? training.i < DRILLS.length && !training.done && id === training.shooter : match.canShoot(id)
+  if (table.isTipped(id)) return false // lying down since an earlier action of this turn
+  if (!training) return match.canShoot(id)
+  const d = DRILLS[training.i]
+  return !!d && !training.done && (training.actions ? id.startsWith('cyan') && id in d.pieces : id === training.shooter)
 }
 
 function shoot(shot: Shot) {
@@ -246,7 +246,7 @@ function aiFrame(now: number) {
     return launchRound()
   }
   if (!busy && !thinking() && aiToPlay()) {
-    aiThought = think(table, id => match.canShoot(id), AI_TEAM, opponent as Level)
+    aiThought = think(table, canShoot, AI_TEAM, opponent as Level)
     refresh()
   }
   if (aiThought) {
@@ -321,7 +321,7 @@ function clearAim() {
 function endTurn(goalAgainst: Team | null) {
   if (training) return endDrill(goalAgainst)
   if (strat) return endRound(goalAgainst)
-  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds(), captured: table.passedTo })
+  const out = match.endTurn({ goalAgainst, tipped: table.tippedIds(), holder: table.holder })
   if (out.winner) {
     sfx.win()
     scene.celebrate(out.winner)

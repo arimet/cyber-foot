@@ -8,7 +8,7 @@ export type Drill = {
   pieces: Record<string, { x: number; z: number }> // the shooter and the others on the pitch
   holder: string // starts with the ball at its feet
   side?: { x: number; z: number } // where at its feet; default: toward the goal its team attacks
-  // 'pass': a goal after at least one pass; steal: that piece loses the ball; 'deny': magenta ends without the ball
+  // 'pass': a goal after at least one earlier action (the pass); steal: that piece loses the ball; 'deny': magenta ends without the ball
   win: 'goal' | 'pass' | 'deny' | { steal: string }
   minOrders?: number // Strategy drills: orders the player must give
   script?: Shot[] // Strategy drills: the other team's orders, played at the same time
@@ -66,10 +66,10 @@ export function setUpDrill(table: Table, d: Drill): void {
 }
 
 export function drillMet(
-  d: Drill, r: { goalAgainst: Team | null; passes: number; holder: string | null; orders: number },
+  d: Drill, r: { goalAgainst: Team | null; actions: number; holder: string | null; orders: number },
 ): boolean {
   if (r.orders < (d.minOrders ?? 1)) return false
-  if (d.win === 'pass') return r.goalAgainst === 'magenta' && r.passes > 0
+  if (d.win === 'pass') return r.goalAgainst === 'magenta' && r.actions > 0
   if (d.win === 'deny') return r.goalAgainst !== 'cyan' && !r.holder?.startsWith('magenta')
   if (d.win === 'goal') return r.goalAgainst === 'magenta'
   return r.goalAgainst !== 'cyan' && r.holder !== d.win.steal

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GOALS_TO_WIN, MAX_PASSES, PIECES } from '../src/game/constants'
+import { GOALS_TO_WIN, MAX_ACTIONS, PIECES } from '../src/game/constants'
 import { Match } from '../src/game/match'
 
 const quiet = { goalAgainst: null, tipped: [] as string[] }
@@ -94,37 +94,46 @@ describe('Match', () => {
     expect(PIECES.some(p => m.canShoot(p.id))).toBe(true)
   })
 
-  it('a pass caught by a teammate gives the same team another shot, with that piece only', () => {
+  it(`while its team keeps the ball, a team plays on with any piece, ${MAX_ACTIONS} actions in all`, () => {
     const m = new Match(PIECES)
-    m.endTurn({ ...quiet, captured: 'cyan-light2' })
+    m.endTurn({ ...quiet, holder: 'cyan-light2' }) // a pass, say
     expect(m.turn).toBe('cyan')
-    expect(m.receiver).toBe('cyan-light2')
-    expect(m.canShoot('cyan-light2')).toBe(true)
-    expect(m.canShoot('cyan-light1')).toBe(false)
-  })
-
-  it('an interception ends the turn', () => {
-    const m = new Match(PIECES)
-    m.endTurn({ ...quiet, captured: 'magenta-heavy1' })
+    expect(m.actions).toBe(1)
+    expect(m.canShoot('cyan-heavy1')).toBe(true) // a teammate may move
+    for (let i = 2; i < MAX_ACTIONS; i++) m.endTurn({ ...quiet, holder: 'cyan-light2' })
+    expect(m.turn).toBe('cyan')
+    m.endTurn({ ...quiet, holder: 'cyan-light2' }) // the last action
     expect(m.turn).toBe('magenta')
-    expect(m.receiver).toBeNull()
-    expect(m.canShoot('magenta-light1')).toBe(true)
+    expect(m.actions).toBe(0)
   })
 
-  it('after MAX_PASSES passes the next catch ends the turn', () => {
+  it('losing the ball ends the turn', () => {
     const m = new Match(PIECES)
-    for (let i = 0; i < MAX_PASSES; i++) m.endTurn({ ...quiet, captured: i % 2 ? 'cyan-light1' : 'cyan-light2' })
-    expect(m.passes).toBe(MAX_PASSES)
-    m.endTurn({ ...quiet, captured: 'cyan-heavy1' })
+    m.endTurn({ ...quiet, holder: 'magenta-heavy1' })
     expect(m.turn).toBe('magenta')
-    expect(m.passes).toBe(0)
+    m.endTurn({ ...quiet, holder: null }) // a loose ball
+    expect(m.turn).toBe('cyan')
   })
 
-  it('a piece knocked over during a pass still sits out its next turn', () => {
+  it('a team that wins the ball plays on', () => {
     const m = new Match(PIECES)
-    m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'], captured: 'cyan-light2' })
+    m.endTurn(quiet)
+    m.endTurn({ ...quiet, holder: 'magenta-light1' }) // a tackle or a loose ball picked up
+    expect(m.turn).toBe('magenta')
+  })
+
+  it('a piece knocked over during the turn still sits out its next turn', () => {
+    const m = new Match(PIECES)
+    m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'], holder: 'cyan-light2' })
     m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'] }) // cyan's turn ends, the heavy still lying
     m.endTurn({ goalAgainst: null, tipped: ['cyan-heavy1'] }) // magenta's
     expect(m.canShoot('cyan-heavy1')).toBe(false)
+  })
+
+  it('a goal ends the turn even with the ball kept', () => {
+    const m = new Match(PIECES)
+    m.endTurn({ goalAgainst: 'magenta', tipped: [], holder: 'cyan-light1' })
+    expect(m.turn).toBe('magenta')
+    expect(m.actions).toBe(0)
   })
 })
